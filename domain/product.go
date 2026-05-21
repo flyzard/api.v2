@@ -1,12 +1,6 @@
 package domain
 
-import (
-	"errors"
-	"fmt"
-	"strings"
-
-	"github.com/google/uuid"
-)
+import "github.com/google/uuid"
 
 type ProductType string
 
@@ -26,77 +20,78 @@ func (t ProductType) IsValid() bool {
 type UnitOfMeasure string
 
 const (
-	UnitPiece   UnitOfMeasure = "UN" // Unidade
-	UnitKg      UnitOfMeasure = "KG" // Quilograma
-	UnitGram    UnitOfMeasure = "GR" // Grama
-	UnitLiter   UnitOfMeasure = "LT" // Litro
-	UnitMeter   UnitOfMeasure = "MT" // Metro
-	UnitM2      UnitOfMeasure = "M2" // Metro quadrado
-	UnitM3      UnitOfMeasure = "M3" // Metro cúbico
-	UnitHour    UnitOfMeasure = "HR" // Hora
-	UnitDay     UnitOfMeasure = "DI" // Dia
-	UnitMonth   UnitOfMeasure = "MS" // Mês
-	UnitPack    UnitOfMeasure = "PC" // Embalagem
-	UnitService UnitOfMeasure = "SV" // Serviço
+	UnitPiece   UnitOfMeasure = "UN"
+	UnitKg      UnitOfMeasure = "KG"
+	UnitGram    UnitOfMeasure = "GR"
+	UnitLiter   UnitOfMeasure = "LT"
+	UnitMeter   UnitOfMeasure = "MT"
+	UnitM2      UnitOfMeasure = "M2"
+	UnitM3      UnitOfMeasure = "M3"
+	UnitHour    UnitOfMeasure = "HR"
+	UnitDay     UnitOfMeasure = "DI"
+	UnitMonth   UnitOfMeasure = "MS"
+	UnitPack    UnitOfMeasure = "PC"
+	UnitService UnitOfMeasure = "SV"
 )
 
+var validUnits = map[UnitOfMeasure]struct{}{
+	UnitPiece: {}, UnitKg: {}, UnitGram: {}, UnitLiter: {}, UnitMeter: {},
+	UnitM2: {}, UnitM3: {}, UnitHour: {}, UnitDay: {}, UnitMonth: {},
+	UnitPack: {}, UnitService: {},
+}
+
 func (u UnitOfMeasure) IsValid() bool {
-	switch u {
-	case UnitPiece, UnitKg, UnitGram, UnitLiter, UnitMeter, UnitM2, UnitM3,
-		UnitHour, UnitDay, UnitMonth, UnitPack, UnitService:
-		return true
-	}
-	return false
+	_, ok := validUnits[u]
+	return ok
 }
 
 type Product struct {
-	ID          uuid.UUID     `json:"id"`
-	Code        string        `json:"code,omitempty"`
-	Name        string        `json:"name"`
-	Description string        `json:"description,omitempty"`
-	EAN         string        `json:"ean,omitempty"`
-	Type        ProductType   `json:"type"`
-	Unit        UnitOfMeasure `json:"unit,omitempty"`
-	Price       Money         `json:"price,omitempty"`
-	Active      bool          `json:"active"`
+	ProductID          uuid.UUID     `json:"id"`
+	ProductCode        string        `json:"product_code"`
+	ProductType        ProductType   `json:"type"`
+	ProductGroup       string        `json:"group,omitempty"`
+	ProductDescription string        `json:"description"`
+	ProductNumberCode  string        `json:"number_code"`
+	CustomsDetails     string        `json:"customs_details,omitempty"`
+	Unit               UnitOfMeasure `json:"unit,omitempty"`
+	Price              Money         `json:"price,omitempty"`
+	Active             bool          `json:"active"`
 }
 
 type ProductOption func(*Product)
 
-func WithCode(s string) ProductOption           { return func(p *Product) { p.Code = s } }
-func WithDescription(s string) ProductOption    { return func(p *Product) { p.Description = s } }
-func WithEAN(s string) ProductOption            { return func(p *Product) { p.EAN = s } }
+func WithProductGroup(s string) ProductOption   { return func(p *Product) { p.ProductGroup = s } }
+func WithCustomsDetails(s string) ProductOption { return func(p *Product) { p.CustomsDetails = s } }
 func WithUnit(u UnitOfMeasure) ProductOption    { return func(p *Product) { p.Unit = u } }
 func WithPrice(m Money) ProductOption           { return func(p *Product) { p.Price = m } }
-func WithProductActive(active bool) ProductOption {
-	return func(p *Product) { p.Active = active }
-}
+func WithProductActive(b bool) ProductOption    { return func(p *Product) { p.Active = b } }
 
-func NewProduct(name string, productType ProductType, opts ...ProductOption) (Product, error) {
+func NewProduct(code string, productType ProductType, description, numberCode string, opts ...ProductOption) (Product, error) {
+	if code == "" {
+		return Product{}, ErrMissingProductCode
+	}
+	if !productType.IsValid() {
+		return Product{}, ErrInvalidProductType
+	}
+	if description == "" {
+		return Product{}, ErrMissingProductDescription
+	}
+	if numberCode == "" {
+		return Product{}, ErrMissingProductNumberCode
+	}
 	p := Product{
-		ID:     uuid.New(),
-		Name:   strings.TrimSpace(name),
-		Type:   productType,
-		Active: true,
+		ProductID:          uuid.New(),
+		ProductCode:        code,
+		ProductType:        productType,
+		ProductDescription: description,
+		ProductNumberCode:  numberCode,
+		Active:             true,
 	}
 	for _, opt := range opts {
 		opt(&p)
 	}
-	if err := p.Validate(); err != nil {
-		return Product{}, err
+	if p.Unit != "" && !p.Unit.IsValid() {
+		return Product{}, ErrInvalidUnit
 	}
 	return p, nil
-}
-
-func (p Product) Validate() error {
-	if strings.TrimSpace(p.Name) == "" {
-		return errors.New("product name is required")
-	}
-	if !p.Type.IsValid() {
-		return fmt.Errorf("invalid product type: %q", p.Type)
-	}
-	if p.Unit != "" && !p.Unit.IsValid() {
-		return fmt.Errorf("invalid unit of measure: %q", p.Unit)
-	}
-	return nil
 }

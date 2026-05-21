@@ -19,6 +19,13 @@ type DraftDocument interface {
 	SetDate(date time.Time) error
 }
 
+type Totals struct {
+	NetTotal   Money `json:"net_total"`
+	TaxTotal   Money `json:"tax_total"`
+	StampDuty  Money `json:"stamp_duty"`
+	GrossTotal Money `json:"gross_total"`
+}
+
 type CommonDraftDocument struct {
 	DocumentType DocumentType   `json:"doc_type"`
 	Customer     Customer       `json:"customer"`
@@ -32,7 +39,7 @@ func (d *CommonDraftDocument) Validate() error {
 	if d.DocumentType == "" {
 		return ErrMissingDocumentType
 	}
-	if d.Customer.ID == uuid.Nil {
+	if d.Customer.CustomerID == uuid.Nil {
 		return ErrMissingCustomer
 	}
 	if len(d.Lines) == 0 {
@@ -83,13 +90,18 @@ func (d *CommonDraftDocument) SetDate(date time.Time) error {
 }
 
 func (d *CommonDraftDocument) CalculateTotals() error {
-	// This method can be implemented to calculate totals for the document based on the lines and their respective taxes and discounts.
+	for _ := range d.Lines {
+	}
 	return nil
 }
 
 func (d *CommonDraftDocument) SetCustomer(customer Customer) error {
 	d.Customer = customer
 
+	return nil
+}
+
+func (d *CommonDraftDocument) NetTotal() error {
 	return nil
 }
 

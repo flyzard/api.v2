@@ -1,8 +1,8 @@
 package domain
 
 import (
+	"encoding/json"
 	"fmt"
-	"math/big"
 )
 
 type DiscountKind string
@@ -13,68 +13,69 @@ const (
 	DiscountAmount  DiscountKind = "amount"
 )
 
-type Percent struct {
-	Value int64
-}
-
-const maxPercent = 100 * moneyScale
-
-func ParsePercent(s string) (Percent, error) {
-	v, err := parseFixed(s, 5)
-	if err != nil {
-		return Percent{}, err
-	}
-	return Percent{Value: v}, nil
-}
-
-func (p Percent) String() string { return formatFixed5(p.Value) }
-
-func (p Percent) MarshalJSON() ([]byte, error) {
-	return []byte(`"` + p.String() + `"`), nil
-}
-
-func (p *Percent) UnmarshalJSON(data []byte) error {
-	v, err := ParsePercent(unquoteJSONNumber(data))
-	if err != nil {
-		return err
-	}
-	*p = v
-	return nil
-}
-
 type Discount struct {
 	Kind    DiscountKind `json:"kind"`
 	Percent Percent      `json:"percent"`
 	Amount  Money        `json:"amount"`
 }
 
-func NewPercentDiscount(p Percent) (Discount, error) {
-	if p.Value < 0 || p.Value > maxPercent {
-		return Discount{}, fmt.Errorf("percent out of range: %s", p)
+// NewPercentDiscount takes a human percent (10.0 = 10% off).
+func NewPercentDiscount(value float64) (Discount, error) {
+	p, err := NewPercent(value)
+	if err != nil {
+		return Discount{}, err
 	}
 	return Discount{Kind: DiscountPercent, Percent: p}, nil
 }
 
 func NewAmountDiscount(m Money) (Discount, error) {
-	if m.Amount < 0 {
-		return Discount{}, fmt.Errorf("negative discount amount")
-	}
-	return Discount{Kind: DiscountAmount, Amount: m}, nil
+	d := Discount{Kind: DiscountAmount, Amount: m}
+	return d, d.Validate()
 }
 
+// Validate checks invariants. Run after deserializing from untrusted sources.
+func (d Discount) Validate() error {
+	switch d.Kind {
+	case DiscountNone:
+	case DiscountPercent:
+		if d.Percent < 0 || d.Percent > PercentScale {
+			return fmt.Errorf("percent out of range: %d", d.Percent)
+		}
+	case DiscountAmount:
+		if d.Amount < 0 {
+			return fmt.Errorf("negative discount amount: %d", d.Amount)
+		}
+	default:
+		return fmt.Errorf("invalid discount kind: %s", d.Kind)
+	}
+	return nil
+}
+
+// UnmarshalJSON runs Validate after standard unmarshal.
+func (d *Discount) UnmarshalJSON(data []byte) error {
+	type alias Discount
+	var tmp alias
+	if err := json.Unmarshal(data, &tmp); err != nil {
+		return err
+	}
+	*d = Discount(tmp)
+	return d.Validate()
+}
+
+// Apply returns the net amount after discount. Panics on unrecognized Kind —
+// JSON and constructors validate up-front, so an unknown Kind here means corrupted state.
 func (d Discount) Apply(base Money) Money {
 	switch d.Kind {
 	case DiscountNone:
-		return Money{}
+		return base
 	case DiscountPercent:
-		prod := new(big.Int).Mul(big.NewInt(base.Amount), big.NewInt(d.Percent.Value))
-		denom := new(big.Int).Mul(bigPercent, big.NewInt(moneyScale))
-		return Money{Amount: divRoundHalfUp(prod, denom).Int64()}
+		return base.Sub(base.MulPercent(d.Percent))
 	case DiscountAmount:
-		if d.Amount.Amount > base.Amount {
-			return base
+		if d.Amount > base {
+			return 0
 		}
-		return d.Amount
+		return base.Sub(d.Amount)
+	default:
+		panic(fmt.Sprintf("invalid discount kind: %q", d.Kind))
 	}
-	panic(fmt.Sprintf("unknown discount kind: %q", d.Kind))
 }

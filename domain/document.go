@@ -11,8 +11,8 @@ type DraftDocument interface {
 	Validate() error
 	SetType(doctype DocumentType) error
 	AddLine(line DocumentLine) error
-	RemoveLine(lineID int8) error
-	UpdateLine(lineID int8, line DocumentLine) error
+	RemoveLine(lineID uint8) error
+	UpdateLine(lineID uint8, line DocumentLine) error
 	CalculateTotals() error
 	SetCustomer(customer Customer) error
 	SetSeries(series Series) error
@@ -38,6 +38,11 @@ func (d *CommonDraftDocument) Validate() error {
 	if len(d.Lines) == 0 {
 		return ErrNoLines
 	}
+	for i, line := range d.Lines {
+		if err := line.Validate(); err != nil {
+			return fmt.Errorf("line %d: %w", i, err)
+		}
+	}
 	return nil
 }
 
@@ -47,56 +52,47 @@ func (d *CommonDraftDocument) SetType(doctype DocumentType) error {
 }
 
 func (d *CommonDraftDocument) AddLine(line DocumentLine) error {
-	if len(d.Lines) == 0 {
-		line.ID = 1
-	} else {
-		last := d.Lines[len(d.Lines)-1]
-		line.ID = last.ID + 1
-	}
-
 	d.Lines = append(d.Lines, line)
 	return nil
 }
 
-func (d *CommonDraftDocument) findLineIndex(lineID int16) (int, error) {
-	if lineID < 0 {
-		return -1, fmt.Errorf("%w: id cannot be negative: %d", ErrLineNotFound, lineID)
+func (d *CommonDraftDocument) RemoveLine(index uint8) error {
+	if index >= uint8(len(d.Lines)) {
+		return fmt.Errorf("%w: index out of range: %d", ErrLineNotFound, index)
 	}
-	if lineID >= int16(len(d.Lines)) {
-		return -1, fmt.Errorf("%w: id out of range: %d", ErrLineNotFound, lineID)
-	}
-	for i, line := range d.Lines {
-		if line.ID == lineID {
-			return i, nil
-		}
-	}
-	return -1, fmt.Errorf("%w: id %d", ErrLineNotFound, lineID)
-}
-
-func (d *CommonDraftDocument) RemoveLine(lineID int16) error {
-	i, err := d.findLineIndex(lineID)
-	if err != nil {
-		return err
-	}
-	d.Lines = append(d.Lines[:i], d.Lines[i+1:]...)
+	d.Lines = append(d.Lines[:index], d.Lines[index+1:]...)
 	return nil
 }
 
-func (d *CommonDraftDocument) UpdateLine(lineID int16, line DocumentLine) error {
-	i, err := d.findLineIndex(lineID)
-	if err != nil {
-		return err
+func (d *CommonDraftDocument) UpdateLine(index uint8, line DocumentLine) error {
+	if index >= uint8(len(d.Lines)) {
+		return fmt.Errorf("%w: index out of range: %d", ErrLineNotFound, index)
 	}
-	d.Lines[i] = line
+	d.Lines[index] = line
+	return nil
+}
+
+func (d *CommonDraftDocument) SetSeries(series Series) error {
+	d.Series = series
+	return nil
+}
+
+func (d *CommonDraftDocument) SetDate(date time.Time) error {
+	d.Date = date
+	return nil
+}
+
+func (d *CommonDraftDocument) CalculateTotals() error {
+	// This method can be implemented to calculate totals for the document based on the lines and their respective taxes and discounts.
+	return nil
+}
+
+func (d *CommonDraftDocument) SetCustomer(customer Customer) error {
+	d.Customer = customer
+
 	return nil
 }
 
 type DraftFS struct {
 	CommonDraftDocument
-}
-
-func (d *DraftFS) SetCustomer(customer Customer) error {
-	d.Customer = customer
-
-	return nil
 }

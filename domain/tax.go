@@ -1,5 +1,10 @@
 package domain
 
+import (
+	"encoding/json"
+	"fmt"
+)
+
 type TaxRegion string
 
 const (
@@ -17,63 +22,92 @@ const (
 	TaxExempt       TaxCategory = "ISE"
 )
 
+// RegionRates holds VAT rates per category in Percent units (basis points):
+// 2300 = 23.00%, 650 = 6.50%.
 type RegionRates struct {
-	Normal, Intermediate, Reduced int
+	Normal, Intermediate, Reduced Percent
 }
 
+// taxRates is hardcoded and trusted. If rates ever come from an external source,
+// validate values through NewPercent before assigning.
 var taxRates = map[TaxRegion]RegionRates{
-	PT:   {Normal: 23, Intermediate: 13, Reduced: 6},
-	PTAC: {Normal: 16, Intermediate: 9, Reduced: 4},
-	PTAM: {Normal: 22, Intermediate: 12, Reduced: 5},
+	PT:   {Normal: 2300, Intermediate: 1300, Reduced: 600},
+	PTAC: {Normal: 1600, Intermediate: 900, Reduced: 400},
+	PTAM: {Normal: 2200, Intermediate: 1200, Reduced: 500},
 }
 
-func (r RegionRates) getRate(category TaxCategory) int {
+func (r RegionRates) rateFor(category TaxCategory) (Percent, error) {
 	switch category {
 	case TaxNormal:
-		return r.Normal
+		return r.Normal, nil
 	case TaxIntermediate:
-		return r.Intermediate
+		return r.Intermediate, nil
 	case TaxReduced:
-		return r.Reduced
+		return r.Reduced, nil
 	default:
-		return 0
+		return 0, fmt.Errorf("unknown tax category: %s", category)
 	}
 }
 
+// TaxRate: Category ISE iff valid Exemption (enforced by GetTaxRate).
 type TaxRate struct {
 	Region    TaxRegion   `json:"region"`
 	Category  TaxCategory `json:"category"`
-	Value     int         `json:"value"`
+	Value     Percent     `json:"value"`
 	Exemption Exemption   `json:"exemption,omitempty"`
 }
 
-func (t TaxRate) IsExempt() bool {
-	return t.Exemption.Valid()
+// UnmarshalJSON re-derives Value from the canonical rate table.
+// The "value" field is output-only on the wire; any client-supplied value is discarded.
+func (t *TaxRate) UnmarshalJSON(data []byte) error {
+	var in struct {
+		Region    TaxRegion   `json:"region"`
+		Category  TaxCategory `json:"category"`
+		Exemption Exemption   `json:"exemption"`
+	}
+	if err := json.Unmarshal(data, &in); err != nil {
+		return err
+	}
+	rate, err := GetTaxRate(in.Region, in.Category, in.Exemption)
+	if err != nil {
+		return err
+	}
+	*t = rate
+	return nil
 }
 
-func GetTaxRate(region TaxRegion, category TaxCategory, exemption Exemption) TaxRate {
-	if exemption.Valid() {
-		return TaxRate{
-			Region:    region,
-			Category:  category,
-			Value:     0,
-			Exemption: exemption,
-		}
+// Validate asserts the rate matches the canonical table. JSON path canonicalizes
+// via UnmarshalJSON; this catches programmatic literals like TaxRate{...}.
+func (t TaxRate) Validate() error {
+	expected, err := GetTaxRate(t.Region, t.Category, t.Exemption)
+	if err != nil {
+		return err
 	}
+	if expected.Value != t.Value {
+		return fmt.Errorf("tax rate value %d does not match canonical %d for %s/%s", t.Value, expected.Value, t.Region, t.Category)
+	}
+	return nil
+}
 
-	if rates, ok := taxRates[region]; ok {
-		return TaxRate{
-			Region:   region,
-			Category: category,
-			Value:    rates.getRate(category),
+func GetTaxRate(region TaxRegion, category TaxCategory, exemption Exemption) (TaxRate, error) {
+	rates, ok := taxRates[region]
+	if !ok {
+		return TaxRate{}, fmt.Errorf("unknown tax region: %s", region)
+	}
+	if category == TaxExempt {
+		if !exemption.Valid() {
+			return TaxRate{}, fmt.Errorf("category %s requires a valid exemption, got %q", TaxExempt, exemption)
 		}
+		return TaxRate{Region: region, Category: category, Exemption: exemption}, nil
 	}
-
-	return TaxRate{
-		Region:   region,
-		Category: category,
-		Value:    0,
+	if exemption != "" {
+		return TaxRate{}, fmt.Errorf("exemption %s requires category %s, got %s", exemption, TaxExempt, category)
 	}
+	value, err := rates.rateFor(category)
+	if err != nil {
+		return TaxRate{}, err
+	}
+	return TaxRate{Region: region, Category: category, Value: value}, nil
 }
 
 type Exemption string

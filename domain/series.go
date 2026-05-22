@@ -32,8 +32,13 @@ type Series struct {
 	Year             *int            `json:"year,omitempty"`
 	LastNum          int             `json:"last_num"`
 	LastHash         string          `json:"last_hash,omitempty"`
+	LastDate         *time.Time      `json:"last_date,omitempty"`
 	LastSystemDate   *time.Time      `json:"last_system_date,omitempty"`
-	Active           bool            `json:"active"`
+	// Version is bumped on every successful AppendIssue. Persistence layers compare it
+	// in the UPDATE WHERE Version=? clause to detect concurrent issuance against the
+	// same series. The domain stays single-threaded; this is bookkeeping only.
+	Version uint64 `json:"version"`
+	Active  bool   `json:"active"`
 	FinalizedAt      *time.Time      `json:"finalized_at,omitempty"`
 	ProcessingMeans  ProcessingMeans `json:"processing_means"`
 }
@@ -87,9 +92,26 @@ func (s *Series) RegisterWithAT(atCode string, at time.Time) error {
 	if s.ATCode != "" {
 		return ErrSeriesAlreadyRegistered
 	}
+	if err := ValidateATCode(atCode); err != nil {
+		return err
+	}
 	s.ATCode = atCode
 	s.RegistrationDate = &at
 	s.ATStatus = SeriesActive
 	s.Active = true
 	return nil
+}
+
+// AppendIssue advances the series after a successful issuance. Caller MUST pass
+// seq == LastNum+1 inside the transaction that persists the document.
+// Empty hash leaves LastHash untouched — payments consume seq but don't chain.
+// docDate is the invoice/transaction date used for monotonicity checks on the next issue.
+func (s *Series) AppendIssue(seq int, hash string, docDate, now time.Time) {
+	s.LastNum = seq
+	if hash != "" {
+		s.LastHash = hash
+	}
+	s.LastDate = &docDate
+	s.LastSystemDate = &now
+	s.Version++
 }

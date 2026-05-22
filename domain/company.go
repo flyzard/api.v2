@@ -24,34 +24,15 @@ type Company struct {
 	Active     bool      `json:"active"`
 }
 
-type CompanyOption func(*Company)
-
-func WithTradeName(s string) CompanyOption { return func(c *Company) { c.TradeName = s } }
-func WithAddress(a Address) CompanyOption  { return func(c *Company) { c.Address = a } }
-func WithPhone(s string) CompanyOption     { return func(c *Company) { c.Phone = s } }
-func WithFax(s string) CompanyOption       { return func(c *Company) { c.Fax = s } }
-func WithEmail(s string) CompanyOption     { return func(c *Company) { c.Email = s } }
-func WithWebsite(s string) CompanyOption   { return func(c *Company) { c.Website = s } }
-func WithFiscalYear(y int) CompanyOption   { return func(c *Company) { c.FiscalYear = y } }
-func WithStartMonth(m int) CompanyOption   { return func(c *Company) { c.StartMonth = m } }
-func WithEACCode(s string) CompanyOption   { return func(c *Company) { c.EACCode = s } }
-func WithActive(active bool) CompanyOption { return func(c *Company) { c.Active = active } }
-
-func NewCompany(nif TaxID, name string, opts ...CompanyOption) (Company, error) {
-	c := Company{
-		ID:         uuid.New(),
-		NIF:        nif,
-		Name:       strings.TrimSpace(name),
-		StartMonth: 1,
-		Active:     true,
+func NewCompany(c Company) (Company, error) {
+	if c.ID == uuid.Nil {
+		c.ID = uuid.New()
 	}
-	for _, opt := range opts {
-		opt(&c)
+	c.Name = strings.TrimSpace(c.Name)
+	if c.StartMonth == 0 {
+		c.StartMonth = 1
 	}
-	if err := c.Validate(); err != nil {
-		return Company{}, err
-	}
-	return c, nil
+	return c, c.Validate()
 }
 
 func (c Company) Validate() error {
@@ -69,6 +50,18 @@ func (c Company) Validate() error {
 	}
 	if c.EACCode != "" && len(c.EACCode) != 5 {
 		return fmt.Errorf("EAC code must be 5 digits: %q", c.EACCode)
+	}
+	for _, f := range []struct{ name, val string }{
+		{"company.name", c.Name},
+		{"company.trade_name", c.TradeName},
+		{"company.phone", c.Phone},
+		{"company.fax", c.Fax},
+		{"company.email", c.Email},
+		{"company.website", c.Website},
+	} {
+		if err := enforceWindows1252(f.val, f.name); err != nil {
+			return err
+		}
 	}
 	return nil
 }

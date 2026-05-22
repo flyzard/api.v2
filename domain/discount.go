@@ -5,77 +5,106 @@ import (
 	"fmt"
 )
 
-type DiscountKind string
-
-const (
-	DiscountNone    DiscountKind = ""
-	DiscountPercent DiscountKind = "percent"
-	DiscountAmount  DiscountKind = "amount"
-)
-
-type Discount struct {
-	Kind    DiscountKind `json:"kind"`
-	Percent Percent      `json:"percent"`
-	Amount  Money        `json:"amount"`
+type Discount interface {
+	Apply(base Money) Money
+	isDiscount()
 }
 
-// NewPercentDiscount takes a human percent (10.0 = 10% off).
+// PercentDiscount removes Rate percent of the base.
+type PercentDiscount struct {
+	Rate Percent `json:"percent"`
+}
+
+func (PercentDiscount) isDiscount() {}
+
+func (p PercentDiscount) Apply(base Money) Money {
+	return base.Sub(base.MulPercent(p.Rate))
+}
+
+// AmountDiscount removes a fixed amount. If Amount exceeds the base, the net is 0.
+type AmountDiscount struct {
+	Amount Money `json:"amount"`
+}
+
+func (AmountDiscount) isDiscount() {}
+
+func (a AmountDiscount) Apply(base Money) Money {
+	if a.Amount > base {
+		return 0
+	}
+	return base.Sub(a.Amount)
+}
+
+// applyDiscount dispatches Apply, treating a nil Discount as the identity.
+func applyDiscount(d Discount, base Money) Money {
+	if d == nil {
+		return base
+	}
+	return d.Apply(base)
+}
+
 func NewPercentDiscount(value float64) (Discount, error) {
 	p, err := NewPercent(value)
 	if err != nil {
-		return Discount{}, err
+		return nil, err
 	}
-	return Discount{Kind: DiscountPercent, Percent: p}, nil
+	return PercentDiscount{Rate: p}, nil
 }
 
 func NewAmountDiscount(m Money) (Discount, error) {
-	d := Discount{Kind: DiscountAmount, Amount: m}
-	return d, d.Validate()
-}
-
-// Validate checks invariants. Run after deserializing from untrusted sources.
-func (d Discount) Validate() error {
-	switch d.Kind {
-	case DiscountNone:
-	case DiscountPercent:
-		if d.Percent < 0 || d.Percent > PercentScale {
-			return fmt.Errorf("percent out of range: %d", d.Percent)
-		}
-	case DiscountAmount:
-		if d.Amount < 0 {
-			return fmt.Errorf("negative discount amount: %d", d.Amount)
-		}
-	default:
-		return fmt.Errorf("invalid discount kind: %s", d.Kind)
+	if m < 0 {
+		return nil, fmt.Errorf("negative discount amount: %d", m)
 	}
-	return nil
+	return AmountDiscount{Amount: m}, nil
 }
 
-// UnmarshalJSON runs Validate after standard unmarshal.
-func (d *Discount) UnmarshalJSON(data []byte) error {
-	type alias Discount
-	var tmp alias
-	if err := json.Unmarshal(data, &tmp); err != nil {
-		return err
+type discountKind string
+
+const (
+	discountKindPercent discountKind = "percent"
+	discountKindAmount  discountKind = "amount"
+)
+
+func (p PercentDiscount) MarshalJSON() ([]byte, error) {
+	return json.Marshal(struct {
+		Type    discountKind `json:"type"`
+		Percent Percent      `json:"percent"`
+	}{discountKindPercent, p.Rate})
+}
+
+func (a AmountDiscount) MarshalJSON() ([]byte, error) {
+	return json.Marshal(struct {
+		Type   discountKind `json:"type"`
+		Amount Money        `json:"amount"`
+	}{discountKindAmount, a.Amount})
+}
+
+func unmarshalDiscount(data []byte) (Discount, error) {
+	if len(data) == 0 || string(data) == "null" {
+		return nil, nil
 	}
-	*d = Discount(tmp)
-	return d.Validate()
-}
-
-// Apply returns the net amount after discount. Panics on unrecognized Kind —
-// JSON and constructors validate up-front, so an unknown Kind here means corrupted state.
-func (d Discount) Apply(base Money) Money {
-	switch d.Kind {
-	case DiscountNone:
-		return base
-	case DiscountPercent:
-		return base.Sub(base.MulPercent(d.Percent))
-	case DiscountAmount:
-		if d.Amount > base {
-			return 0
+	var head struct {
+		Type discountKind `json:"type"`
+	}
+	if err := json.Unmarshal(data, &head); err != nil {
+		return nil, err
+	}
+	switch head.Type {
+	case "":
+		return nil, nil
+	case discountKindPercent:
+		var p PercentDiscount
+		if err := json.Unmarshal(data, &p); err != nil {
+			return nil, err
 		}
-		return base.Sub(d.Amount)
+		return p, nil
+	case discountKindAmount:
+		var a AmountDiscount
+		if err := json.Unmarshal(data, &a); err != nil {
+			return nil, err
+		}
+		return NewAmountDiscount(a.Amount)
 	default:
-		panic(fmt.Sprintf("invalid discount kind: %q", d.Kind))
+		return nil, fmt.Errorf("invalid discount type: %q", head.Type)
 	}
 }

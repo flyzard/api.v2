@@ -10,7 +10,7 @@ type TaxRegion string
 const (
 	PT   TaxRegion = "PT"
 	PTAC TaxRegion = "PT-AC"
-	PTAM TaxRegion = "PT-AM"
+	PTMA TaxRegion = "PT-MA"
 )
 
 type TaxCategory string
@@ -20,6 +20,10 @@ const (
 	TaxIntermediate TaxCategory = "INT"
 	TaxReduced      TaxCategory = "RED"
 	TaxExempt       TaxCategory = "ISE"
+	// TaxOther covers "other" VAT codes that don't map to the canonical
+	// NOR/INT/RED rate table — the line declares its own rate (e.g. parafiscal
+	// pass-throughs). GetTaxRate cannot resolve OUT; build TaxRate directly.
+	TaxOther TaxCategory = "OUT"
 )
 
 // RegionRates holds VAT rates per category in Percent units (basis points):
@@ -33,7 +37,7 @@ type RegionRates struct {
 var taxRates = map[TaxRegion]RegionRates{
 	PT:   {Normal: 2300, Intermediate: 1300, Reduced: 600},
 	PTAC: {Normal: 1600, Intermediate: 900, Reduced: 400},
-	PTAM: {Normal: 2200, Intermediate: 1200, Reduced: 500},
+	PTMA: {Normal: 2200, Intermediate: 1200, Reduced: 500},
 }
 
 func (r RegionRates) rateFor(category TaxCategory) (Percent, error) {
@@ -57,16 +61,26 @@ type TaxRate struct {
 	Exemption Exemption   `json:"exemption,omitempty"`
 }
 
-// UnmarshalJSON re-derives Value from the canonical rate table.
-// The "value" field is output-only on the wire; any client-supplied value is discarded.
+// UnmarshalJSON re-derives Value from the canonical rate table for the standard
+// categories. For TaxOther — which has no canonical rate — the client-supplied
+// Value is preserved.
 func (t *TaxRate) UnmarshalJSON(data []byte) error {
 	var in struct {
 		Region    TaxRegion   `json:"region"`
 		Category  TaxCategory `json:"category"`
+		Value     Percent     `json:"value"`
 		Exemption Exemption   `json:"exemption"`
 	}
 	if err := json.Unmarshal(data, &in); err != nil {
 		return err
+	}
+	if in.Category == TaxOther {
+		r := TaxRate{Region: in.Region, Category: in.Category, Value: in.Value, Exemption: in.Exemption}
+		if err := r.Validate(); err != nil {
+			return err
+		}
+		*t = r
+		return nil
 	}
 	rate, err := GetTaxRate(in.Region, in.Category, in.Exemption)
 	if err != nil {
@@ -78,7 +92,18 @@ func (t *TaxRate) UnmarshalJSON(data []byte) error {
 
 // Validate asserts the rate matches the canonical table. JSON path canonicalizes
 // via UnmarshalJSON; this catches programmatic literals like TaxRate{...}.
+// For TaxOther the canonical lookup is skipped — the line declares its own rate;
+// only the region and a non-negative value are checked.
 func (t TaxRate) Validate() error {
+	if t.Category == TaxOther {
+		if _, ok := taxRates[t.Region]; !ok {
+			return fmt.Errorf("unknown tax region: %s", t.Region)
+		}
+		if t.Value < 0 || t.Value > PercentScale {
+			return fmt.Errorf("OUT rate value out of range: %d", t.Value)
+		}
+		return nil
+	}
 	expected, err := GetTaxRate(t.Region, t.Category, t.Exemption)
 	if err != nil {
 		return err
@@ -93,6 +118,9 @@ func GetTaxRate(region TaxRegion, category TaxCategory, exemption Exemption) (Ta
 	rates, ok := taxRates[region]
 	if !ok {
 		return TaxRate{}, fmt.Errorf("unknown tax region: %s", region)
+	}
+	if category == TaxOther {
+		return TaxRate{}, fmt.Errorf("category %s has no canonical rate; construct TaxRate directly with caller-supplied Value", TaxOther)
 	}
 	if category == TaxExempt {
 		if !exemption.Valid() {
@@ -146,64 +174,88 @@ const (
 	M99 Exemption = "M99" // M99 is the catch-all exemption code per Art. 2.o n.o 2, 3.o n.os 4/6/7, 4.o n.o 5 CIVA.
 )
 
-var exemptionDescriptions = map[Exemption]string{
+// exemptionInfo holds the per-code metadata that lookups (Valid/Description/IsReverseCharge)
+// need. One row per code = one source of truth for what a code means and how it behaves.
+type exemptionInfo struct {
+	Description     string
+	IsReverseCharge bool
+}
+
+var exemptions = map[Exemption]exemptionInfo{
 	// Exemptions
-	M01: "Artigo 16.º, n.º 6 do CIVA",
-	M02: "Artigo 6.º do Decreto-Lei n.º 198/90, de 19 de junho",
-	M04: "Isento artigo 13.º do CIVA",
-	M05: "Isento artigo 14.º do CIVA",
-	M06: "Isento artigo 15.º do CIVA",
-	M07: "Isento artigo 9.º do CIVA",
-	M09: "IVA - não confere direito a dedução / Artigo 62.º alínea b) do CIVA",
-	M10: "IVA - Regime de isenção / Artigo 53.º do CIVA",
-	M11: "Regime particular do tabaco / Decreto-Lei n.º 346/85, de 23 de agosto",
-	M12: "Regime da margem de lucro - Agências de viagens / Decreto-Lei n.º 221/85, de 3 de julho",
-	M13: "Regime da margem de lucro - Bens em segunda mão / Decreto-Lei n.º 199/96, de 18 de outubro",
-	M14: "Regime da margem de lucro - Objetos de arte / Decreto-Lei n.º 199/96, de 18 de outubro",
-	M15: "Regime da margem de lucro - Objetos de coleção e antiguidades / Decreto-Lei n.º 199/96, de 18 de outubro",
-	M16: "Isento artigo 14.º do RITI",
-	M19: "Outras isenções temporárias determinadas em diploma próprio",
-	M20: "IVA - regime forfetário / Artigo 59.º-D n.º 2 do CIVA",
-	M21: "IVA - não confere direito a dedução / Artigo 72.º n.º 4 do CIVA",
-	M25: "Mercadorias à consignação / Artigo 38.º n.º 1 alínea a) do CIVA",
+	M01: {Description: "Artigo 16.º, n.º 6 do CIVA"},
+	M02: {Description: "Artigo 6.º do Decreto-Lei n.º 198/90, de 19 de junho"},
+	M04: {Description: "Isento artigo 13.º do CIVA"},
+	M05: {Description: "Isento artigo 14.º do CIVA"},
+	M06: {Description: "Isento artigo 15.º do CIVA"},
+	M07: {Description: "Isento artigo 9.º do CIVA"},
+	M09: {Description: "IVA - não confere direito a dedução / Artigo 62.º alínea b) do CIVA"},
+	M10: {Description: "IVA - Regime de isenção / Artigo 53.º do CIVA"},
+	M11: {Description: "Regime particular do tabaco / Decreto-Lei n.º 346/85, de 23 de agosto"},
+	M12: {Description: "Regime da margem de lucro - Agências de viagens / Decreto-Lei n.º 221/85, de 3 de julho"},
+	M13: {Description: "Regime da margem de lucro - Bens em segunda mão / Decreto-Lei n.º 199/96, de 18 de outubro"},
+	M14: {Description: "Regime da margem de lucro - Objetos de arte / Decreto-Lei n.º 199/96, de 18 de outubro"},
+	M15: {Description: "Regime da margem de lucro - Objetos de coleção e antiguidades / Decreto-Lei n.º 199/96, de 18 de outubro"},
+	M16: {Description: "Isento artigo 14.º do RITI"},
+	M19: {Description: "Outras isenções temporárias determinadas em diploma próprio"},
+	M20: {Description: "IVA - regime forfetário / Artigo 59.º-D n.º 2 do CIVA"},
+	M21: {Description: "IVA - não confere direito a dedução / Artigo 72.º n.º 4 do CIVA"},
+	M25: {Description: "Mercadorias à consignação / Artigo 38.º n.º 1 alínea a) do CIVA"},
 
 	// Reverse charge (autoliquidação)
-	M30: "IVA - autoliquidação / Artigo 2.º n.º 1 alínea i) do CIVA",
-	M31: "IVA - autoliquidação / Artigo 2.º n.º 1 alínea j) do CIVA",
-	M32: "IVA - autoliquidação / Artigo 2.º n.º 1 alínea l) do CIVA",
-	M33: "IVA - autoliquidação / Artigo 2.º n.º 1 alínea m) do CIVA",
-	M34: "IVA - autoliquidação / Artigo 2.º n.º 1 alínea n) do CIVA",
-	M40: "IVA - autoliquidação / Artigo 6.º n.º 6 alínea a) do CIVA, a contrário",
-	M41: "IVA - autoliquidação / Artigo 8.º n.º 3 do RITI",
-	M42: "IVA - autoliquidação / Decreto-Lei n.º 21/2007, de 29 de janeiro",
-	M43: "IVA - autoliquidação / Decreto-Lei n.º 362/99, de 16 de setembro",
+	M30: {Description: "IVA - autoliquidação / Artigo 2.º n.º 1 alínea i) do CIVA", IsReverseCharge: true},
+	M31: {Description: "IVA - autoliquidação / Artigo 2.º n.º 1 alínea j) do CIVA", IsReverseCharge: true},
+	M32: {Description: "IVA - autoliquidação / Artigo 2.º n.º 1 alínea l) do CIVA", IsReverseCharge: true},
+	M33: {Description: "IVA - autoliquidação / Artigo 2.º n.º 1 alínea m) do CIVA", IsReverseCharge: true},
+	M34: {Description: "IVA - autoliquidação / Artigo 2.º n.º 1 alínea n) do CIVA", IsReverseCharge: true},
+	M40: {Description: "IVA - autoliquidação / Artigo 6.º n.º 6 alínea a) do CIVA, a contrário", IsReverseCharge: true},
+	M41: {Description: "IVA - autoliquidação / Artigo 8.º n.º 3 do RITI", IsReverseCharge: true},
+	M42: {Description: "IVA - autoliquidação / Decreto-Lei n.º 21/2007, de 29 de janeiro", IsReverseCharge: true},
+	M43: {Description: "IVA - autoliquidação / Decreto-Lei n.º 362/99, de 16 de setembro", IsReverseCharge: true},
 
 	// 2025 codes
-	M44: "Artigo 6.º do CIVA - operações não localizadas em território nacional",
-	M45: "Artigo 58.º-A do CIVA - regime de isenção transfronteiriço",
-	M46: "Decreto-Lei n.º 19/2017, de 14 de fevereiro - e-TaxFree",
+	M44: {Description: "Artigo 6.º do CIVA - operações não localizadas em território nacional"},
+	M45: {Description: "Artigo 58.º-A do CIVA - regime de isenção transfronteiriço"},
+	M46: {Description: "Decreto-Lei n.º 19/2017, de 14 de fevereiro - e-TaxFree"},
 
 	// Catch-all
-	M99: "Não sujeito ou não tributado",
+	M99: {Description: "Não sujeito ou não tributado"},
 }
 
 func (e Exemption) Valid() bool {
-	_, ok := exemptionDescriptions[e]
+	_, ok := exemptions[e]
 	return ok
 }
 
 func (e Exemption) Description() string {
-	if desc, ok := exemptionDescriptions[e]; ok {
-		return desc
+	if info, ok := exemptions[e]; ok {
+		return info.Description
 	}
 	return string(e)
 }
 
-func (e Exemption) IsReverseCharge() bool {
-	switch e {
-	case M30, M31, M32, M33, M34, M40, M41, M42, M43:
-		return true
-	default:
-		return false
-	}
+func (e Exemption) IsReverseCharge() bool { return exemptions[e].IsReverseCharge }
+
+// TaxBreakdownEntry is one row of the per-document aggregation grouped by
+// (Region, Category, ExemptionCode). The SAF-T projector and the QR fields
+// (I/J/K series) both consume this shape; computing it once at issuance keeps
+// the projector pure.
+type TaxBreakdownEntry struct {
+	Region               TaxRegion   `json:"region"`
+	Category             TaxCategory `json:"category"`
+	ExemptionCode        Exemption   `json:"exemption_code,omitempty"`
+	ExemptionDescription string      `json:"exemption_description,omitempty"`
+	Base                 Money       `json:"base"`
+	Tax                  Money       `json:"tax"`
+}
+
+// TaxBreakdown is a deterministically ordered slice (region asc, category asc,
+// exemption code asc) so two documents with identical totals always produce
+// identical breakdowns.
+type TaxBreakdown []TaxBreakdownEntry
+
+type taxBreakdownKey struct {
+	Region    TaxRegion
+	Category  TaxCategory
+	Exemption Exemption
 }

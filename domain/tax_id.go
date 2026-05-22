@@ -4,6 +4,16 @@ import "strings"
 
 type TaxID string
 
+func NewTaxID(s string) (TaxID, error) {
+	t := TaxID(strings.TrimSpace(s))
+	if !t.IsValid() {
+		return "", ErrInvalidTaxID
+	}
+	return t, nil
+}
+
+func (t *TaxID) UnmarshalJSON(data []byte) error { return unmarshalString(data, NewTaxID, t) }
+
 var nifPrefixes2 = map[string]struct{}{
 	"45": {}, "70": {}, "71": {}, "72": {}, "74": {}, "75": {},
 	"77": {}, "79": {}, "90": {}, "91": {}, "98": {}, "99": {},

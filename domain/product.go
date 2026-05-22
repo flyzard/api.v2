@@ -1,22 +1,38 @@
 package domain
 
-import "github.com/google/uuid"
+import (
+	"strings"
+
+	"github.com/google/uuid"
+)
 
 type ProductType string
 
+// SAF-T (PT) ProductType enum per Portaria 302/2016 + 2025 codes:
+//   P — Products (goods)
+//   S — Services
+//   O — Other (charges/non-product line items)
+//   E — Excise duties (IEC) lines
+//   I — Parafiscal taxes / charges (taxas)
 const (
-	ProductTypeGoods   ProductType = "P"
-	ProductTypeService ProductType = "S"
+	ProductTypeGoods      ProductType = "P"
+	ProductTypeService    ProductType = "S"
+	ProductTypeOther      ProductType = "O"
+	ProductTypeExcise     ProductType = "E"
+	ProductTypeParafiscal ProductType = "I"
 )
 
 func (t ProductType) IsValid() bool {
 	switch t {
-	case ProductTypeGoods, ProductTypeService:
+	case ProductTypeGoods, ProductTypeService, ProductTypeOther, ProductTypeExcise, ProductTypeParafiscal:
 		return true
 	}
 	return false
 }
 
+// UnitOfMeasure is the SAF-T UnitOfMeasure field: free text up to 20 chars.
+// The constants below are common suggestions; any 1..20 char string is acceptable
+// per XSD SAFPTtextTypeMandatoryMax20Car.
 type UnitOfMeasure string
 
 const (
@@ -34,15 +50,28 @@ const (
 	UnitService UnitOfMeasure = "SV"
 )
 
-var validUnits = map[UnitOfMeasure]struct{}{
-	UnitPiece: {}, UnitKg: {}, UnitGram: {}, UnitLiter: {}, UnitMeter: {},
-	UnitM2: {}, UnitM3: {}, UnitHour: {}, UnitDay: {}, UnitMonth: {},
-	UnitPack: {}, UnitService: {},
+func (u UnitOfMeasure) Validate() error {
+	if n := len(u); n < 1 || n > 20 {
+		return ErrInvalidUnit
+	}
+	return nil
 }
 
-func (u UnitOfMeasure) IsValid() bool {
-	_, ok := validUnits[u]
-	return ok
+// NewUnitOfMeasure wraps a string after enforcing the 1..20 length bound.
+func NewUnitOfMeasure(s string) (UnitOfMeasure, error) {
+	u := UnitOfMeasure(s)
+	if err := u.Validate(); err != nil {
+		return "", err
+	}
+	return u, nil
+}
+
+func (u *UnitOfMeasure) UnmarshalJSON(data []byte) error {
+	// Optional field: a JSON empty-string round-trips as the zero value.
+	if string(data) == `""` {
+		return nil
+	}
+	return unmarshalString(data, NewUnitOfMeasure, u)
 }
 
 type Product struct {
@@ -58,40 +87,42 @@ type Product struct {
 	Active             bool          `json:"active"`
 }
 
-type ProductOption func(*Product)
-
-func WithProductGroup(s string) ProductOption   { return func(p *Product) { p.ProductGroup = s } }
-func WithCustomsDetails(s string) ProductOption { return func(p *Product) { p.CustomsDetails = s } }
-func WithUnit(u UnitOfMeasure) ProductOption    { return func(p *Product) { p.Unit = u } }
-func WithPrice(m Money) ProductOption           { return func(p *Product) { p.Price = m } }
-func WithProductActive(b bool) ProductOption    { return func(p *Product) { p.Active = b } }
-
-func NewProduct(code string, productType ProductType, description, numberCode string, opts ...ProductOption) (Product, error) {
-	if code == "" {
+// NewProduct fills in zero-value defaults (ID) and validates required fields.
+// Callers populate the rest via struct literal — there's no builder.
+func NewProduct(p Product) (Product, error) {
+	if p.ProductID == uuid.Nil {
+		p.ProductID = uuid.New()
+	}
+	p.ProductCode = strings.TrimSpace(p.ProductCode)
+	p.ProductDescription = strings.TrimSpace(p.ProductDescription)
+	p.ProductNumberCode = strings.TrimSpace(p.ProductNumberCode)
+	if p.ProductCode == "" {
 		return Product{}, ErrMissingProductCode
 	}
-	if !productType.IsValid() {
+	if !p.ProductType.IsValid() {
 		return Product{}, ErrInvalidProductType
 	}
-	if description == "" {
+	if p.ProductDescription == "" {
 		return Product{}, ErrMissingProductDescription
 	}
-	if numberCode == "" {
+	if p.ProductNumberCode == "" {
 		return Product{}, ErrMissingProductNumberCode
 	}
-	p := Product{
-		ProductID:          uuid.New(),
-		ProductCode:        code,
-		ProductType:        productType,
-		ProductDescription: description,
-		ProductNumberCode:  numberCode,
-		Active:             true,
+	if p.Unit != "" {
+		if err := p.Unit.Validate(); err != nil {
+			return Product{}, err
+		}
 	}
-	for _, opt := range opts {
-		opt(&p)
-	}
-	if p.Unit != "" && !p.Unit.IsValid() {
-		return Product{}, ErrInvalidUnit
+	for _, f := range []struct{ name, val string }{
+		{"product.code", p.ProductCode},
+		{"product.group", p.ProductGroup},
+		{"product.description", p.ProductDescription},
+		{"product.number_code", p.ProductNumberCode},
+		{"product.customs_details", p.CustomsDetails},
+	} {
+		if err := enforceWindows1252(f.val, f.name); err != nil {
+			return Product{}, err
+		}
 	}
 	return p, nil
 }

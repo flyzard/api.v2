@@ -62,7 +62,7 @@ func (c *ctx) issueSales(draft *domain.DraftSalesInvoice, opts domain.IssueOptio
 	if err != nil {
 		log.Fatalf("issue sales %s: %v", draft.DocumentType, err)
 	}
-	c.store.record(doc.IssuedDocument)
+	c.store.recordSales(doc)
 	return doc
 }
 
@@ -71,7 +71,7 @@ func (c *ctx) issueStock(draft *domain.DraftStockMovement, opts domain.IssueOpti
 	if err != nil {
 		log.Fatalf("issue stock %s: %v", draft.DocumentType, err)
 	}
-	c.store.record(doc.IssuedDocument)
+	c.store.recordStock(doc)
 	return doc
 }
 
@@ -80,7 +80,7 @@ func (c *ctx) issueWork(draft *domain.DraftWorkDocument, opts domain.IssueOption
 	if err != nil {
 		log.Fatalf("issue work %s: %v", draft.DocumentType, err)
 	}
-	c.store.record(doc.IssuedDocument)
+	c.store.recordWork(doc)
 	return doc
 }
 
@@ -89,6 +89,7 @@ func (c *ctx) issuePayment(draft *domain.PaymentDraft, totals domain.PaymentTota
 	if err != nil {
 		log.Fatalf("issue payment %s: %v", draft.Type, err)
 	}
+	c.store.recordPayment(doc)
 	return doc
 }
 
@@ -152,6 +153,8 @@ func scenario52(c *ctx, today time.Time) {
 	draft := c.salesDraft(domain.FT, c.f.CustWithNIF, today, domain.SalesInvoiceFields{},
 		newLine(c.f.Products["P-NOR"], 1, 100.00, taxNOR(), today),
 	)
+	due := today.AddDate(0, 0, 30)
+	draft.PaymentTerms = &due
 	doc := c.issueSales(draft, domain.IssueOptions{})
 	printJSON("FT issued (pre-cancellation)", doc)
 
@@ -159,7 +162,7 @@ func scenario52(c *ctx, today time.Time) {
 	if err := doc.Cancel("Erro de emissão", cancelAt, c.clock); err != nil {
 		log.Fatalf("cancel: %v", err)
 	}
-	c.store.record(doc.IssuedDocument)
+	c.store.recordSales(doc)
 	printJSON("FT after Cancel (DB state)", doc)
 
 	printCancelledPDF(doc)
@@ -201,12 +204,15 @@ func scenario54(c *ctx, today time.Time) {
 	}}
 
 	draft := c.salesDraft(domain.FT, c.f.CustWithNIF, today, domain.SalesInvoiceFields{}, line)
+	due := today.AddDate(0, 0, 30)
+	draft.PaymentTerms = &due
 	doc54 = c.issueSales(draft, domain.IssueOptions{})
 	printJSON("FT issued with OrderReferences → NE", doc54)
 
 	if err := doc53.MarkBilled(doc54.Number, c.clock.Tick()); err != nil {
 		log.Fatalf("mark NE billed: %v", err)
 	}
+	c.store.recordWork(doc53)
 	printJSON("NE after MarkBilled (Status=F)", doc53)
 	salesSummary("5.4", doc54)
 }
@@ -237,6 +243,8 @@ func scenario56(c *ctx, today time.Time) {
 		newLine(c.f.Products["P-INT"], 1, 5.00, taxINT(), today),
 		newLine(c.f.Products["P-NOR"], 1, 10.00, taxNOR(), today),
 	)
+	due := today.AddDate(0, 0, 30)
+	draft.PaymentTerms = &due
 	doc56 = c.issueSales(draft, domain.IssueOptions{})
 	printJSON("FT 4 linhas (RED/ISE/INT/NOR)", doc56)
 	salesSummary("5.6", doc56)
@@ -245,16 +253,20 @@ func scenario56(c *ctx, today time.Time) {
 // ─── 5.7 ────────────────────────────────────────────────────────────────────
 
 func scenario57(c *ctx, today time.Time) {
-	banner("5.7", "Fatura com desconto de linha 8.8% + desconto global (SettlementAmount)")
+	banner("5.7", "Fatura com descontos por linha (Percent + Amount) — AT-compliant")
+	// AT cert §5.7 (round 3348): line discounts must surface as per-line
+	// SettlementAmount, never as a doc-level Settlement. Exercising both
+	// PercentDiscount (line1) and AmountDiscount (line2) to cover both paths.
 	line1 := newLine(c.f.Products["P-NOR"], 100, 0.55, taxNOR(), today)
 	line1.Discount = must(domain.NewPercentDiscount(8.8))
 	line2 := newLine(c.f.Products["P-SERVICE"], 1, 10.00, taxNOR(), today)
+	line2.Discount = must(domain.NewAmountDiscount(must(domain.NewMoney(5.00))))
 
 	draft := c.salesDraft(domain.FT, c.f.CustWithNIF, today, domain.SalesInvoiceFields{}, line1, line2)
+	due := today.AddDate(0, 0, 30)
+	draft.PaymentTerms = &due
 	doc := c.issueSales(draft, domain.IssueOptions{})
-	printJSON("FT issued", doc)
-
-	printSettlementSimulation(must(domain.NewMoney(5.00)), "Desconto comercial global 5,00 €")
+	printJSON("FT issued (line discounts + PaymentTerms)", doc)
 	salesSummary("5.7", doc)
 }
 
@@ -265,16 +277,18 @@ func scenario58(c *ctx, today time.Time) {
 	draft := c.salesDraft(domain.FT, c.f.CustForeign, today, domain.SalesInvoiceFields{},
 		newLine(c.f.Products["P-SERVICE"], 4, 80.00, taxNOR(), today),
 	)
-	doc := c.issueSales(draft, domain.IssueOptions{})
-	printJSON("FT issued (totals stored in EUR)", doc)
-
+	draft.CalculateTotals()
 	currency := must(domain.NewCurrency(
 		must(domain.NewCurrencyCode("USD")),
-		doc.Totals.GrossTotal,
+		draft.Totals.GrossTotal,
 		must(domain.NewExchangeRate(1.085000)),
-		doc.Date,
+		today,
 	))
-	printCurrencySimulation(currency)
+	draft.Currency = &currency
+	due := today.AddDate(0, 0, 30)
+	draft.PaymentTerms = &due
+	doc := c.issueSales(draft, domain.IssueOptions{})
+	printJSON("FT issued (EUR totals + Currency block)", doc)
 	salesSummary("5.8", doc)
 }
 

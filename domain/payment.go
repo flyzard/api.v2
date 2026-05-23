@@ -235,7 +235,6 @@ type Payment struct {
 	Customer        Customer         `json:"customer"`
 	Lines           []PaymentLine    `json:"lines"`
 	PaymentTotals
-	Settlement     *Money           `json:"settlement,omitempty"`
 	Currency       *Currency        `json:"currency,omitempty"`
 	WithholdingTax []WithholdingTax `json:"withholding_tax,omitempty"`
 }
@@ -252,7 +251,6 @@ type PaymentDraft struct {
 	SourceID        string
 	Methods         []PaymentMethod
 	Lines           []PaymentLine
-	Settlement      *Money
 	Currency        *Currency
 	WithholdingTax  []WithholdingTax
 }
@@ -361,7 +359,6 @@ func IssuePayment(draft *PaymentDraft, series *Series, sourceID string, now time
 		Customer:        draft.Customer,
 		Lines:           draft.Lines,
 		PaymentTotals:   totals,
-		Settlement:      draft.Settlement,
 		Currency:        draft.Currency,
 		WithholdingTax:  draft.WithholdingTax,
 	}

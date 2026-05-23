@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"maps"
+	"slices"
 	"strings"
 	"time"
 
@@ -44,27 +46,43 @@ func (c *monotonicClock) Tick() time.Time {
 	return c.current
 }
 
-// memoryStore is the in-memory IssuedDocumentReader used by ND issuance to
-// resolve References against originating invoices. Every issued sales document
-// is recorded so later scenarios can reference earlier ones.
+// memoryStore holds issued documents per family so the projector and ND
+// validation can consume them. Sales drives FindByNumber; the other families
+// are kept for the SAF-T export pass.
 type memoryStore struct {
-	docs map[string]domain.IssuedDocument
+	sales    map[string]domain.SalesInvoice
+	stock    map[string]domain.StockMovement
+	work     map[string]domain.WorkDocument
+	payments map[string]domain.Payment
 }
 
 func newStore() *memoryStore {
-	return &memoryStore{docs: map[string]domain.IssuedDocument{}}
+	return &memoryStore{
+		sales:    map[string]domain.SalesInvoice{},
+		stock:    map[string]domain.StockMovement{},
+		work:     map[string]domain.WorkDocument{},
+		payments: map[string]domain.Payment{},
+	}
 }
 
-func (s *memoryStore) record(d domain.IssuedDocument) {
-	s.docs[d.Number.Format()] = d
-}
+func (s *memoryStore) recordSales(d domain.SalesInvoice)  { s.sales[d.Number.Format()] = d }
+func (s *memoryStore) recordStock(d domain.StockMovement) { s.stock[d.Number.Format()] = d }
+func (s *memoryStore) recordWork(d domain.WorkDocument)   { s.work[d.Number.Format()] = d }
+func (s *memoryStore) recordPayment(d domain.Payment)     { s.payments[d.Number.Format()] = d }
+
+// snapshot* return all recorded values as slices. Order is not guaranteed;
+// the projector sorts deterministically per family at export time.
+func (s *memoryStore) snapshotSales() []domain.SalesInvoice    { return slices.Collect(maps.Values(s.sales)) }
+func (s *memoryStore) snapshotStock() []domain.StockMovement   { return slices.Collect(maps.Values(s.stock)) }
+func (s *memoryStore) snapshotWork() []domain.WorkDocument     { return slices.Collect(maps.Values(s.work)) }
+func (s *memoryStore) snapshotPayments() []domain.Payment      { return slices.Collect(maps.Values(s.payments)) }
 
 func (s *memoryStore) FindByNumber(n domain.DocNumber) (domain.IssuedDocument, error) {
-	d, ok := s.docs[n.Format()]
+	d, ok := s.sales[n.Format()]
 	if !ok {
 		return domain.IssuedDocument{}, fmt.Errorf("not found: %s", n.Format())
 	}
-	return d, nil
+	return d.IssuedDocument, nil
 }
 
 func must[T any](v T, err error) T {
@@ -167,25 +185,3 @@ func printSAFTCancelRow(doc domain.SalesInvoice) {
 	fmt.Printf("  SourceBilling:     %s\n", doc.SourceBilling)
 }
 
-// printSettlementSimulation prints a doc-level Settlement block. Domain does
-// not yet store doc-level discounts on SalesInvoice; the SAF-T projector
-// (Tier-3 module) will source this from a dedicated field once added. For now
-// the inspector sees it stitched on alongside the issued JSON.
-func printSettlementSimulation(amount domain.Money, reason string) {
-	fmt.Println()
-	fmt.Println("-- SAF-T DocumentTotals/Settlement (simulated — not yet persisted) --")
-	fmt.Printf("  SettlementAmount:      %s\n", amount.Format2DP())
-	fmt.Printf("  SettlementDescription: %s\n", reason)
-}
-
-// printCurrencySimulation prints a foreign-currency block. Domain attaches
-// Currency only to Payments today; for sales invoices it is simulated here so
-// the inspector can see the projected SAF-T DocumentTotals/Currency shape.
-func printCurrencySimulation(c domain.Currency) {
-	fmt.Println()
-	fmt.Println("-- SAF-T DocumentTotals/Currency (simulated — not yet persisted on SalesInvoice) --")
-	fmt.Printf("  CurrencyCode:   %s\n", c.Code)
-	fmt.Printf("  CurrencyAmount: %s\n", c.Amount.Format2DP())
-	fmt.Printf("  ExchangeRate:   %.6f\n", c.ExchangeRate.Float64())
-	fmt.Printf("  Date:           %s\n", c.Date.Format("2006-01-02"))
-}

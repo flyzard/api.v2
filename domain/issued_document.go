@@ -128,12 +128,12 @@ type Signer interface {
 // transaction; otherwise concurrent issuance corrupts the hash chain. Version is the
 // optimistic-lock token to compare in UPDATE … WHERE version = ?.
 type IssuedDocument struct {
-	Number          DocNumber     `json:"number"`
-	ATCUD           ATCUD         `json:"atcud"`
-	Hash            Hash          `json:"hash"`
-	HashControl     HashControl   `json:"hash_control"`
-	SystemEntryDate time.Time     `json:"system_entry_date"`
-	SourceID        string        `json:"source_id"`
+	Number          DocNumber      `json:"number"`
+	ATCUD           ATCUD          `json:"atcud"`
+	Hash            Hash           `json:"hash"`
+	HashControl     HashControl    `json:"hash_control"`
+	SystemEntryDate time.Time      `json:"system_entry_date"`
+	SourceID        string         `json:"source_id"`
 	SourceBilling   SourceBilling  `json:"source_billing"`
 	Period          Period         `json:"period"`
 	Status          DocumentStatus `json:"status"`
@@ -313,4 +313,35 @@ func cancellationDeadline(docDate time.Time) time.Time {
 		year++
 	}
 	return time.Date(year, month, 5, 23, 59, 59, 0, lisbonLocation)
+}
+
+type HolidayCalendar interface {
+	IsHoliday(date time.Time) bool
+}
+
+type EmptyCalendar struct{}
+
+func (EmptyCalendar) IsHoliday(time.Time) bool { return false }
+
+func workingDaysBetween(start, end time.Time, cal HolidayCalendar) int {
+	if cal == nil {
+		cal = EmptyCalendar{}
+	}
+	s := dateOnly(start)
+	e := dateOnly(end)
+	if !s.Before(e) {
+		return 0
+	}
+	days := 0
+	for cur := s.AddDate(0, 0, 1); !cur.After(e); cur = cur.AddDate(0, 0, 1) {
+		switch cur.Weekday() {
+		case time.Saturday, time.Sunday:
+			continue
+		}
+		if cal.IsHoliday(cur) {
+			continue
+		}
+		days++
+	}
+	return days
 }

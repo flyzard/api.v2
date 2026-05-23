@@ -69,6 +69,27 @@ func (l DocumentLine) LineSubtotal() Money {
 	return l.UnitPrice.Mul(l.Quantity)
 }
 
+// LineNetAmount is the post-discount, pre-tax line amount — the value the
+// SAF-T projector emits as DebitAmount or CreditAmount per family rules.
+func (l DocumentLine) LineNetAmount() Money {
+	return applyDiscount(l.Discount, l.LineSubtotal())
+}
+
+// LineDiscountAmount is the absolute discount on this line — projects to
+// SAF-T Line/SettlementAmount when non-zero (AT cert §5.7).
+func (l DocumentLine) LineDiscountAmount() Money {
+	return l.LineSubtotal() - l.LineNetAmount()
+}
+
+// EffectiveUnitPrice is the post-discount per-unit price so the SAF-T wire
+// invariant Q × UnitPrice = CreditAmount holds (AT cert §5.7).
+func (l DocumentLine) EffectiveUnitPrice() Money {
+	if l.Quantity == 0 {
+		return 0
+	}
+	return Money(roundDiv(int64(l.LineNetAmount())*scale, int64(l.Quantity)))
+}
+
 // LineTotal = (unit × qty − discount) + tax(after-discount base).
 // Tax base is post-discount per PT VAT rules; stamp duty Amount is fixed regardless of base.
 // A nil Tax (non-valued transport line) contributes zero tax.

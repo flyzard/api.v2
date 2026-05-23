@@ -18,6 +18,9 @@ type SalesInvoiceFields struct {
 	// summing to GrossTotal only for DocumentType == FR (D-FR-1, D-FR-2;
 	// F-SAFT-14 field shape). Multiple methods allowed; sum must match.
 	Payments []FRPayment `json:"payments,omitempty"`
+	// Currency is the SAF-T Invoice/DocumentTotals/Currency view for non-EUR
+	// originals. Mirrors Payment.Currency. Date must equal the invoice Date.
+	Currency *Currency `json:"currency,omitempty"`
 }
 
 // FSLimits caps the GrossTotal of an FS (simplified invoice / "fatura
@@ -136,6 +139,12 @@ func (d *DraftSalesInvoice) Validate() error {
 	}
 	if !d.DocumentType.IsSales() {
 		return fmt.Errorf("not a sales doc type: %s", d.DocumentType)
+	}
+	// Sales lines require Tax per XSD; only Movement allows nil-Tax (non-valued GT, §5.11b).
+	for i, line := range d.Lines {
+		if line.Tax == nil {
+			return fmt.Errorf("line %d: sales line requires Tax", i)
+		}
 	}
 	if err := validateShipPoint("ship_to", d.ShipTo); err != nil {
 		return err

@@ -159,7 +159,7 @@ func scenario52(c *ctx, today time.Time) {
 	printJSON("FT issued (pre-cancellation)", doc)
 
 	cancelAt := c.clock.Tick()
-	if err := doc.Cancel("Erro de emissão", cancelAt, c.clock); err != nil {
+	if err := doc.Cancel("Erro de emissão", cancelAt); err != nil {
 		log.Fatalf("cancel: %v", err)
 	}
 	c.store.recordSales(doc)

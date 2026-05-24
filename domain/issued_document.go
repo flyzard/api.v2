@@ -278,7 +278,7 @@ func issueCommon(draft *CommonDraftDocument, series *Series, signer Signer, sour
 //
 // QRPayload is intentionally NOT mutated — the QR encodes original issuance
 // state and is reprinted verbatim regardless of subsequent status changes.
-func (d *IssuedDocument) Cancel(reason string, at time.Time, clock Clock) error {
+func (d *IssuedDocument) Cancel(reason string, at time.Time) error {
 	switch d.Status {
 	case StatusNormal, StatusSelfBilled, StatusThirdParty:
 		// permitted source states
@@ -292,11 +292,9 @@ func (d *IssuedDocument) Cancel(reason string, at time.Time, clock Clock) error 
 	if len(reason) > MaxLenCancellationReason {
 		return fmt.Errorf("cancellation reason exceeds %d chars", MaxLenCancellationReason)
 	}
-	if clock == nil {
-		clock = SystemClock{}
-	}
+
 	deadline := cancellationDeadline(d.Date)
-	if clock.Now().After(deadline) {
+	if time.Now().After(deadline) {
 		return fmt.Errorf("%w: %s", ErrCancellationDeadlinePassed, deadline.Format(time.RFC3339))
 	}
 	d.Status = StatusCancelled

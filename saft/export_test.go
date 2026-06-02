@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/flyzard/invoicing.v2/config"
 	"github.com/flyzard/invoicing.v2/domain"
 	"github.com/google/uuid"
 	"golang.org/x/text/encoding/charmap"
@@ -95,7 +96,7 @@ func TestExport_StructureIntact(t *testing.T) {
 				Country:       "PT",
 			},
 		},
-		Software: domain.SoftwareIdentity{
+		Software: config.SoftwareIdentity{
 			ProducerTaxID:     "519348761",
 			SoftwareName:      "Test",
 			ProducerName:      "Producer",

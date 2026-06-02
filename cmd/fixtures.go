@@ -12,7 +12,6 @@ import (
 // One Company, one User, a handful of Customers, a Product catalogue,
 // and one registered Series per DocumentType used in the demo.
 type fixtures struct {
-	Software   domain.SoftwareIdentity
 	Issuer     domain.Company
 	IssuerUser domain.User
 
@@ -27,14 +26,6 @@ type fixtures struct {
 
 func buildFixtures(now time.Time) *fixtures {
 	f := &fixtures{}
-
-	f.Software = must(domain.NewSoftwareIdentity(domain.SoftwareIdentity{
-		ProducerTaxID:     "519348761",
-		SoftwareName:      "Faturly",
-		ProducerName:      "AVENIDA DO CODIGO LDA",
-		Version:           "2.0.0",
-		CertificateNumber: "9999",
-	}))
 
 	issuerAddr := must(domain.NewAddress("Rua dos Programadores 1", "Lisboa", "1000-100", "PT"))
 	f.Issuer = must(domain.NewCompany(domain.Company{

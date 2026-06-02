@@ -24,3 +24,8 @@ func enforceWindows1252(s, field string) error {
 	}
 	return nil
 }
+
+// EnsureWindows1252 exposes the Windows-1252 charset invariant to non-domain
+// validators (e.g. package config) that build SAF-T values from outside the
+// model's value-object constructors.
+func EnsureWindows1252(s, field string) error { return enforceWindows1252(s, field) }

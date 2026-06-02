@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/flyzard/invoicing.v2/config"
 	"github.com/flyzard/invoicing.v2/saft"
 )
 
@@ -19,6 +20,11 @@ func main() {
 	loc := mustLisbon()
 	today := time.Date(2026, 5, 22, 0, 0, 0, 0, loc)
 	clockBase := time.Date(2026, 5, 22, 9, 0, 0, 0, loc)
+
+	cfg, err := config.Load(".env")
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	f := buildFixtures(clockBase)
 	c := &ctx{
@@ -30,7 +36,7 @@ func main() {
 
 	fmt.Println("AT Certification Checklist — §5 walkthrough")
 	fmt.Printf("Issuer: %s (NIF %s · EAC %s)\n", f.Issuer.Name, f.Issuer.NIF, f.Issuer.EACCode)
-	fmt.Printf("Software: %s %s · cert %s\n", f.Software.ProductID(), f.Software.Version, f.Software.CertificateNumber)
+	fmt.Printf("Software: %s %s · cert %s\n", cfg.Software.ProductID(), cfg.Software.Version, cfg.Software.CertificateNumber)
 	fmt.Printf("Document date: %s · clock starts at %s\n",
 		today.Format("2006-01-02"), clockBase.Format("2006-01-02T15:04 MST"))
 
@@ -48,7 +54,7 @@ func main() {
 	scenario512(c, today)
 	scenario513(c, today)
 
-	writeSAFT(c, f, today)
+	writeSAFT(c, f, cfg.Software, today)
 
 	fmt.Println()
 	fmt.Println("Done.")
@@ -57,14 +63,14 @@ func main() {
 // writeSAFT projects every recorded document for May 2026 into a SAF-T XML
 // file under out/. Phase B wires the call end-to-end; the projector returns
 // an empty payload until Phases C–H land.
-func writeSAFT(c *ctx, f *fixtures, now time.Time) {
+func writeSAFT(c *ctx, f *fixtures, sw config.SoftwareIdentity, now time.Time) {
 	loc := now.Location()
 	start := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, loc)
 	end := start.AddDate(0, 1, -1)
 
 	hdr := saft.Header{
 		Issuer:    f.Issuer,
-		Software:  f.Software,
+		Software:  sw,
 		Start:     start,
 		End:       end,
 		CreatedAt: now,

@@ -61,7 +61,7 @@ func buildHeader(h Header) xmlHeader {
 		CurrencyCode:              currencyCodeEUR,
 		DateCreated:               fmtDate(h.CreatedAt),
 		TaxEntity:                 taxEntity,
-		ProductCompanyTaxID:       string(h.Software.ProducerTaxID),
+		ProductCompanyTaxID:       h.Software.ProducerTaxID,
 		SoftwareCertificateNumber: h.Software.CertificateNumber,
 		ProductID:                 h.Software.ProductID(),
 		ProductVersion:            h.Software.Version,

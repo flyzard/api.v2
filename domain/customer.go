@@ -106,7 +106,7 @@ func (c Customer) Validate() error {
 		return ErrMissingCompanyName
 	}
 	// Anonymous ("Consumidor final") skips address + PT-checksum; everything
-	// past this branch (Win-1252, structural NIF, AccountID rules) still applies.
+	// past this branch (structural NIF, AccountID rules) still applies.
 	if c.IsAnonymous() {
 		if err := ValidateCustomerTaxID(c.CustomerTaxID, ""); err != nil {
 			return err
@@ -117,19 +117,6 @@ func (c Customer) Validate() error {
 		}
 		if err := c.BillingAddress.Validate(); err != nil {
 			return fmt.Errorf("billing address: %w", err)
-		}
-	}
-	for _, f := range []struct{ name, val string }{
-		{"customer.account_id", c.AccountID},
-		{"customer.company_name", c.CompanyName},
-		{"customer.contact", c.Contact},
-		{"customer.telephone", c.Telephone},
-		{"customer.fax", c.Fax},
-		{"customer.email", c.Email},
-		{"customer.website", c.Website},
-	} {
-		if err := enforceWindows1252(f.val, f.name); err != nil {
-			return err
 		}
 	}
 	return nil

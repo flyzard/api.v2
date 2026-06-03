@@ -60,9 +60,6 @@ func (v VATTax) Validate() error {
 		if n := len(v.ExemptReason); n < MinLenExemptReason || n > MaxLenExemptReason {
 			return fmt.Errorf("exempt reason text must be %d..%d chars, got %d", MinLenExemptReason, MaxLenExemptReason, n)
 		}
-		if err := enforceWindows1252(v.ExemptReason, "vat_tax.exempt_reason"); err != nil {
-			return err
-		}
 	}
 	return nil
 }
@@ -91,9 +88,6 @@ func (s StampTax) Validate() error {
 	if s.Amount < 0 {
 		return fmt.Errorf("negative stamp amount: %d", s.Amount)
 	}
-	if err := enforceWindows1252(s.Code, "stamp_tax.code"); err != nil {
-		return err
-	}
 	return nil
 }
 
@@ -118,9 +112,6 @@ func (n NotSubjectTax) Validate() error {
 	}
 	if n := len(n.ReasonText); n < MinLenExemptReason || n > MaxLenExemptReason {
 		return fmt.Errorf("reason text must be %d..%d chars, got %d", MinLenExemptReason, MaxLenExemptReason, n)
-	}
-	if err := enforceWindows1252(n.ReasonText, "not_subject_tax.reason_text"); err != nil {
-		return err
 	}
 	return nil
 }

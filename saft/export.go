@@ -109,10 +109,9 @@ func Export(hdr Header,
 // xmllint can't compile the schema (uses xs:assert + unbounded maxOccurs).
 const xmlDeclarationWin1252 = `<?xml version="1.0" encoding="Windows-1252"?>` + "\n"
 
-// transcodeWin1252 converts a UTF-8 buffer to Windows-1252. The domain
-// pre-validates each text field at VO construction (see domain/at_charset.go),
-// so this step is the byte-emission fallback — an error here means a non-VO
-// path (struct literal, future ingress) leaked an unmappable rune.
+// transcodeWin1252 converts a UTF-8 buffer to Windows-1252. This is the sole
+// enforcement point for the AT charset invariant (Portaria 363/2010 §R-G7) —
+// an error here means a text field carried a rune unmappable in Windows-1252.
 func transcodeWin1252(utf8 []byte) ([]byte, error) {
 	out, err := charmap.Windows1252.NewEncoder().Bytes(utf8)
 	if err != nil {

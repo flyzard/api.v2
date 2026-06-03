@@ -51,17 +51,5 @@ func (c Company) Validate() error {
 	if c.EACCode != "" && len(c.EACCode) != 5 {
 		return fmt.Errorf("EAC code must be 5 digits: %q", c.EACCode)
 	}
-	for _, f := range []struct{ name, val string }{
-		{"company.name", c.Name},
-		{"company.trade_name", c.TradeName},
-		{"company.phone", c.Phone},
-		{"company.fax", c.Fax},
-		{"company.email", c.Email},
-		{"company.website", c.Website},
-	} {
-		if err := enforceWindows1252(f.val, f.name); err != nil {
-			return err
-		}
-	}
 	return nil
 }

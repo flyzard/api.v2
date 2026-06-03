@@ -31,8 +31,9 @@
 //     ProductID() → Header.ProductID; CertificateNumber → Header.SoftwareCertificateNumber.
 //   - Company (issuer) — separate from SoftwareIdentity per F-SAFT-4/5/6.
 //
-// Encoding: the projector MUST emit Windows-1252. All text-typed VO fields
-// are pre-validated by enforceWindows1252 at construction (P1.5).
+// Encoding: the projector MUST emit Windows-1252. The charset is enforced at
+// byte emission (saft.transcodeWin1252), not at VO construction — an unmappable
+// rune fails the export, not the model.
 //
 // Timezone: all time.Time fields are stored in Europe/Lisbon (P1.7). The
 // projector formats them with the standard SAF-T layout

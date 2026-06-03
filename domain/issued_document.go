@@ -180,7 +180,7 @@ func validateIssueContext(series *Series, docType DocumentType, sourceID string,
 	if sourceID == "" {
 		return fmt.Errorf("source id is required")
 	}
-	return enforceWindows1252(sourceID, "source_id")
+	return nil
 }
 
 // dateOnly drops the time-of-day so AT's calendar-day monotonicity rule

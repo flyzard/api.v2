@@ -17,7 +17,7 @@ func (o OrderReference) Validate() error {
 	if len(o.OriginatingON) > MaxLenOriginatingON {
 		return fmt.Errorf("originating_on exceeds %d chars: %q", MaxLenOriginatingON, o.OriginatingON)
 	}
-	return enforceWindows1252(o.OriginatingON, "order_reference.originating_on")
+	return nil
 }
 
 // DocReference links a credit/debit note line to the invoice line it adjusts.
@@ -38,10 +38,7 @@ func (r DocReference) Validate() error {
 	if len(r.Reason) > 50 {
 		return fmt.Errorf("reason exceeds 50 chars: %q", r.Reason)
 	}
-	if err := enforceWindows1252(r.Reference, "doc_reference.reference"); err != nil {
-		return err
-	}
-	return enforceWindows1252(r.Reason, "doc_reference.reason")
+	return nil
 }
 
 type DocumentLine struct {
@@ -117,9 +114,6 @@ func (l DocumentLine) Validate() error {
 	if n := len(l.Description); n < 1 || n > 200 {
 		return fmt.Errorf("description length must be 1..200, got %d", n)
 	}
-	if err := enforceWindows1252(l.Description, "line.description"); err != nil {
-		return err
-	}
 	if l.Description != l.Product.ProductDescription {
 		return fmt.Errorf("line description %q drifts from product description %q (F-SAFT-9)", l.Description, l.Product.ProductDescription)
 	}
@@ -150,9 +144,6 @@ func (l DocumentLine) Validate() error {
 	for i, sn := range l.SerialNumbers {
 		if sn == "" || len(sn) > 100 {
 			return fmt.Errorf("serial_number[%d] length must be 1..100", i)
-		}
-		if err := enforceWindows1252(sn, fmt.Sprintf("serial_number[%d]", i)); err != nil {
-			return err
 		}
 	}
 	return nil

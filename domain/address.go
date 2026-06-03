@@ -85,26 +85,20 @@ func (a Address) Validate() error {
 	if a.Country == "PT" && !ptPostalCode.MatchString(a.PostalCode) {
 		return fmt.Errorf("PT postal code must match NNNN-NNN: %q", a.PostalCode)
 	}
-	// max==0 → length unconstrained at the domain layer (no entry in regras.md).
-	// BuildingNumber/StreetName/Region fall in that bucket today; revisit if the
-	// SAF-T projector pins authoritative XSD lengths for them.
+	// BuildingNumber/StreetName/Region are length-unconstrained at the domain
+	// layer (no entry in regras.md); revisit if the SAF-T projector pins
+	// authoritative XSD lengths for them.
 	for _, f := range []struct {
 		name string
 		val  string
 		max  int
 	}{
-		{"building_number", a.BuildingNumber, 0},
-		{"street_name", a.StreetName, 0},
 		{"address_detail", a.AddressDetail, MaxLenAddressDetail},
 		{"city", a.City, MaxLenCity},
 		{"postal_code", a.PostalCode, MaxLenPostalCode},
-		{"region", a.Region, 0},
 	} {
-		if f.max > 0 && len(f.val) > f.max {
+		if len(f.val) > f.max {
 			return fmt.Errorf("%s exceeds %d chars: %q", f.name, f.max, f.val)
-		}
-		if err := enforceWindows1252(f.val, f.name); err != nil {
-			return err
 		}
 	}
 	return nil

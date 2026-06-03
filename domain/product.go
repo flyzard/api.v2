@@ -113,16 +113,5 @@ func NewProduct(p Product) (Product, error) {
 			return Product{}, err
 		}
 	}
-	for _, f := range []struct{ name, val string }{
-		{"product.code", p.ProductCode},
-		{"product.group", p.ProductGroup},
-		{"product.description", p.ProductDescription},
-		{"product.number_code", p.ProductNumberCode},
-		{"product.customs_details", p.CustomsDetails},
-	} {
-		if err := enforceWindows1252(f.val, f.name); err != nil {
-			return Product{}, err
-		}
-	}
 	return p, nil
 }

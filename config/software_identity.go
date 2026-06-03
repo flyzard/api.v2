@@ -21,9 +21,9 @@ type SoftwareIdentity struct {
 	CertificateNumber string
 }
 
-// Validate enforces the SAF-T field constraints, reusing the domain's
-// regulatory primitives (NIF checksum, Windows-1252 charset) so config and
-// domain agree on what AT will accept.
+// Validate enforces the SAF-T field constraints, reusing the domain's NIF
+// checksum so config and domain agree on what AT will accept. The Windows-1252
+// charset is enforced at SAF-T byte emission (see saft.transcodeWin1252).
 func (s SoftwareIdentity) Validate() error {
 	if !domain.TaxID(s.ProducerTaxID).IsValid() {
 		return fmt.Errorf("invalid producer tax id: %q", s.ProducerTaxID)
@@ -39,15 +39,6 @@ func (s SoftwareIdentity) Validate() error {
 	}
 	if n := len(s.CertificateNumber); n < 1 || n > 10 {
 		return fmt.Errorf("certificate number length must be 1..10, got %d", n)
-	}
-	for _, f := range []struct{ name, val string }{
-		{"SOFTWARE_NAME", s.SoftwareName},
-		{"SOFTWARE_PRODUCER_NAME", s.ProducerName},
-		{"SOFTWARE_VERSION", s.Version},
-	} {
-		if err := domain.EnsureWindows1252(f.val, f.name); err != nil {
-			return err
-		}
 	}
 	return nil
 }

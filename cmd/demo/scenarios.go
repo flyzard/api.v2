@@ -5,7 +5,7 @@ import (
 	"log"
 	"time"
 
-	"github.com/flyzard/invoicing.v2/domain"
+	"github.com/flyzard/invoicing.v2/internal/domain"
 )
 
 // ctx bundles the cross-cutting machinery every scenario needs.

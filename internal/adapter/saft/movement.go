@@ -1,36 +1,36 @@
 package saft
 
-import "github.com/flyzard/invoicing.v2/domain"
+import "github.com/flyzard/invoicing.v2/internal/domain"
 
 // xmlMovementOfGoods mirrors SAF-T SourceDocuments/MovementOfGoods.
 // Family aggregates: total line count and total quantity across every
 // movement document.
 type xmlMovementOfGoods struct {
-	NumberOfMovementLines int               `xml:"NumberOfMovementLines"`
-	TotalQuantityIssued   saftQty           `xml:"TotalQuantityIssued"`
+	NumberOfMovementLines int                `xml:"NumberOfMovementLines"`
+	TotalQuantityIssued   saftQty            `xml:"TotalQuantityIssued"`
 	Movements             []xmlStockMovement `xml:"StockMovement"`
 }
 
 type xmlStockMovement struct {
-	DocumentNumber    string             `xml:"DocumentNumber"`
-	ATCUD             string             `xml:"ATCUD"`
-	DocumentStatus    xmlMovementStatus  `xml:"DocumentStatus"`
-	Hash              string             `xml:"Hash"`
-	HashControl       string             `xml:"HashControl"`
-	Period            int                `xml:"Period"`
-	MovementDate      string             `xml:"MovementDate"`
-	MovementType      string             `xml:"MovementType"`
-	SystemEntryDate   string             `xml:"SystemEntryDate"`
-	CustomerID        string             `xml:"CustomerID"`
-	SourceID          string             `xml:"SourceID"`
-	EACCode           string             `xml:"EACCode,omitempty"`
-	ShipTo            *xmlShippingPoint  `xml:"ShipTo,omitempty"`
-	ShipFrom          *xmlShippingPoint  `xml:"ShipFrom,omitempty"`
-	MovementEndTime   string             `xml:"MovementEndTime,omitempty"`
-	MovementStartTime string             `xml:"MovementStartTime"`
-	ATDocCodeID       string             `xml:"ATDocCodeID,omitempty"`
-	Lines             []xmlMovementLine  `xml:"Line"`
-	DocumentTotals    xmlSimpleTotals    `xml:"DocumentTotals"`
+	DocumentNumber    string            `xml:"DocumentNumber"`
+	ATCUD             string            `xml:"ATCUD"`
+	DocumentStatus    xmlMovementStatus `xml:"DocumentStatus"`
+	Hash              string            `xml:"Hash"`
+	HashControl       string            `xml:"HashControl"`
+	Period            int               `xml:"Period"`
+	MovementDate      string            `xml:"MovementDate"`
+	MovementType      string            `xml:"MovementType"`
+	SystemEntryDate   string            `xml:"SystemEntryDate"`
+	CustomerID        string            `xml:"CustomerID"`
+	SourceID          string            `xml:"SourceID"`
+	EACCode           string            `xml:"EACCode,omitempty"`
+	ShipTo            *xmlShippingPoint `xml:"ShipTo,omitempty"`
+	ShipFrom          *xmlShippingPoint `xml:"ShipFrom,omitempty"`
+	MovementEndTime   string            `xml:"MovementEndTime,omitempty"`
+	MovementStartTime string            `xml:"MovementStartTime"`
+	ATDocCodeID       string            `xml:"ATDocCodeID,omitempty"`
+	Lines             []xmlMovementLine `xml:"Line"`
+	DocumentTotals    xmlSimpleTotals   `xml:"DocumentTotals"`
 }
 
 // xmlMovementLine mirrors the MovementOfGoods StockMovement/Line sequence,

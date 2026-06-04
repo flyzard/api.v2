@@ -8,7 +8,7 @@ package config
 import (
 	"fmt"
 
-	"github.com/flyzard/invoicing.v2/domain"
+	"github.com/flyzard/invoicing.v2/internal/domain"
 )
 
 // SoftwareIdentity is the producer/software metadata required by SAF-T

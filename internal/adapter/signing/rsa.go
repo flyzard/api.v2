@@ -12,7 +12,7 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/flyzard/invoicing.v2/domain"
+	"github.com/flyzard/invoicing.v2/internal/domain"
 )
 
 // RSASigner signs canonical document lines with the producer's AT-registered private key.

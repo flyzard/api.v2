@@ -1,6 +1,6 @@
 package saft
 
-import "github.com/flyzard/invoicing.v2/domain"
+import "github.com/flyzard/invoicing.v2/internal/domain"
 
 // xmlLine mirrors the SalesInvoice and WorkingDocument Line sequence
 // (identical between the two families per the XSD). MovementOfGoods uses
@@ -9,22 +9,22 @@ import "github.com/flyzard/invoicing.v2/domain"
 // DebitAmount / CreditAmount are pointers so encoding/xml emits exactly
 // one of them (XSD xs:choice).
 type xmlLine struct {
-	LineNumber          int                `xml:"LineNumber"`
-	OrderReferences     []xmlOrderRef      `xml:"OrderReferences,omitempty"`
-	ProductCode         string             `xml:"ProductCode"`
-	ProductDescription  string             `xml:"ProductDescription"`
-	Quantity            saftQty            `xml:"Quantity"`
-	UnitOfMeasure       string             `xml:"UnitOfMeasure"`
-	UnitPrice           saftMoneyLine      `xml:"UnitPrice"`
-	TaxPointDate        string             `xml:"TaxPointDate"`
-	References          []xmlDocRef        `xml:"References,omitempty"`
-	Description         string             `xml:"Description"`
-	DebitAmount         *saftMoneyLine     `xml:"DebitAmount,omitempty"`
-	CreditAmount        *saftMoneyLine     `xml:"CreditAmount,omitempty"`
-	Tax                 *xmlTax            `xml:"Tax,omitempty"`
-	TaxExemptionReason  string             `xml:"TaxExemptionReason,omitempty"`
-	TaxExemptionCode    string             `xml:"TaxExemptionCode,omitempty"`
-	SettlementAmount    *saftMoneyLine     `xml:"SettlementAmount,omitempty"`
+	LineNumber         int            `xml:"LineNumber"`
+	OrderReferences    []xmlOrderRef  `xml:"OrderReferences,omitempty"`
+	ProductCode        string         `xml:"ProductCode"`
+	ProductDescription string         `xml:"ProductDescription"`
+	Quantity           saftQty        `xml:"Quantity"`
+	UnitOfMeasure      string         `xml:"UnitOfMeasure"`
+	UnitPrice          saftMoneyLine  `xml:"UnitPrice"`
+	TaxPointDate       string         `xml:"TaxPointDate"`
+	References         []xmlDocRef    `xml:"References,omitempty"`
+	Description        string         `xml:"Description"`
+	DebitAmount        *saftMoneyLine `xml:"DebitAmount,omitempty"`
+	CreditAmount       *saftMoneyLine `xml:"CreditAmount,omitempty"`
+	Tax                *xmlTax        `xml:"Tax,omitempty"`
+	TaxExemptionReason string         `xml:"TaxExemptionReason,omitempty"`
+	TaxExemptionCode   string         `xml:"TaxExemptionCode,omitempty"`
+	SettlementAmount   *saftMoneyLine `xml:"SettlementAmount,omitempty"`
 }
 
 type xmlOrderRef struct {

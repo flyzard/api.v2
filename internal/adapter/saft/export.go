@@ -9,7 +9,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/flyzard/invoicing.v2/domain"
+	"github.com/flyzard/invoicing.v2/internal/domain"
 	"golang.org/x/text/encoding/charmap"
 )
 

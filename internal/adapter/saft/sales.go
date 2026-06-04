@@ -3,7 +3,7 @@ package saft
 import (
 	"fmt"
 
-	"github.com/flyzard/invoicing.v2/domain"
+	"github.com/flyzard/invoicing.v2/internal/domain"
 )
 
 // xmlSalesInvoices mirrors SAF-T SourceDocuments/SalesInvoices. The family
@@ -18,21 +18,21 @@ type xmlSalesInvoices struct {
 }
 
 type xmlInvoice struct {
-	InvoiceNo       string             `xml:"InvoiceNo"`
-	ATCUD           string             `xml:"ATCUD"`
-	DocumentStatus  xmlDocumentStatus  `xml:"DocumentStatus"`
-	Hash            string             `xml:"Hash"`
-	HashControl     string             `xml:"HashControl"`
-	Period          int                `xml:"Period"`
-	InvoiceDate     string             `xml:"InvoiceDate"`
-	InvoiceType     string             `xml:"InvoiceType"`
-	SpecialRegimes  xmlSpecialRegimes  `xml:"SpecialRegimes"`
-	SourceID        string             `xml:"SourceID"`
-	EACCode         string             `xml:"EACCode,omitempty"`
-	SystemEntryDate string             `xml:"SystemEntryDate"`
-	CustomerID      string             `xml:"CustomerID"`
-	Lines           []xmlLine          `xml:"Line"`
-	DocumentTotals  xmlDocumentTotals  `xml:"DocumentTotals"`
+	InvoiceNo       string              `xml:"InvoiceNo"`
+	ATCUD           string              `xml:"ATCUD"`
+	DocumentStatus  xmlDocumentStatus   `xml:"DocumentStatus"`
+	Hash            string              `xml:"Hash"`
+	HashControl     string              `xml:"HashControl"`
+	Period          int                 `xml:"Period"`
+	InvoiceDate     string              `xml:"InvoiceDate"`
+	InvoiceType     string              `xml:"InvoiceType"`
+	SpecialRegimes  xmlSpecialRegimes   `xml:"SpecialRegimes"`
+	SourceID        string              `xml:"SourceID"`
+	EACCode         string              `xml:"EACCode,omitempty"`
+	SystemEntryDate string              `xml:"SystemEntryDate"`
+	CustomerID      string              `xml:"CustomerID"`
+	Lines           []xmlLine           `xml:"Line"`
+	DocumentTotals  xmlDocumentTotals   `xml:"DocumentTotals"`
 	WithholdingTax  []xmlWithholdingTax `xml:"WithholdingTax,omitempty"`
 }
 
@@ -45,9 +45,9 @@ type xmlDocumentStatus struct {
 }
 
 type xmlSpecialRegimes struct {
-	SelfBilling   int `xml:"SelfBillingIndicator"`
-	CashVAT       int `xml:"CashVATSchemeIndicator"`
-	ThirdParties  int `xml:"ThirdPartiesBillingIndicator"`
+	SelfBilling  int `xml:"SelfBillingIndicator"`
+	CashVAT      int `xml:"CashVATSchemeIndicator"`
+	ThirdParties int `xml:"ThirdPartiesBillingIndicator"`
 }
 
 type xmlDocumentTotals struct {

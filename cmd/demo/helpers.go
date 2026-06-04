@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/flyzard/invoicing.v2/domain"
+	"github.com/flyzard/invoicing.v2/internal/domain"
 )
 
 // stubSigner produces a deterministic 172-char base64 hash from the canonical
@@ -72,10 +72,18 @@ func (s *memoryStore) recordPayment(d domain.Payment)     { s.payments[d.Number.
 
 // snapshot* return all recorded values as slices. Order is not guaranteed;
 // the projector sorts deterministically per family at export time.
-func (s *memoryStore) snapshotSales() []domain.SalesInvoice    { return slices.Collect(maps.Values(s.sales)) }
-func (s *memoryStore) snapshotStock() []domain.StockMovement   { return slices.Collect(maps.Values(s.stock)) }
-func (s *memoryStore) snapshotWork() []domain.WorkDocument     { return slices.Collect(maps.Values(s.work)) }
-func (s *memoryStore) snapshotPayments() []domain.Payment      { return slices.Collect(maps.Values(s.payments)) }
+func (s *memoryStore) snapshotSales() []domain.SalesInvoice {
+	return slices.Collect(maps.Values(s.sales))
+}
+func (s *memoryStore) snapshotStock() []domain.StockMovement {
+	return slices.Collect(maps.Values(s.stock))
+}
+func (s *memoryStore) snapshotWork() []domain.WorkDocument {
+	return slices.Collect(maps.Values(s.work))
+}
+func (s *memoryStore) snapshotPayments() []domain.Payment {
+	return slices.Collect(maps.Values(s.payments))
+}
 
 func (s *memoryStore) FindByNumber(n domain.DocNumber) (domain.IssuedDocument, error) {
 	d, ok := s.sales[n.Format()]
@@ -184,4 +192,3 @@ func printSAFTCancelRow(doc domain.SalesInvoice) {
 	fmt.Printf("  SourceID:          %s\n", doc.SourceID)
 	fmt.Printf("  SourceBilling:     %s\n", doc.SourceBilling)
 }
-

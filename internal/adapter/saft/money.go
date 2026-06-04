@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/flyzard/invoicing.v2/domain"
+	"github.com/flyzard/invoicing.v2/internal/domain"
 )
 
 // saftMoney renders domain.Money at 2dp for totals-level fields. Line-level

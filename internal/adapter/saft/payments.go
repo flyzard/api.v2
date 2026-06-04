@@ -1,6 +1,6 @@
 package saft
 
-import "github.com/flyzard/invoicing.v2/domain"
+import "github.com/flyzard/invoicing.v2/internal/domain"
 
 // xmlPayments mirrors SAF-T SourceDocuments/Payments. Family aggregates
 // walk each PaymentLine.Movement to pick the Debit vs Credit side.

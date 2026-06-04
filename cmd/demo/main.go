@@ -12,10 +12,10 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/flyzard/invoicing.v2/config"
-	"github.com/flyzard/invoicing.v2/domain"
-	"github.com/flyzard/invoicing.v2/saft"
-	"github.com/flyzard/invoicing.v2/signing"
+	"github.com/flyzard/invoicing.v2/internal/adapter/saft"
+	"github.com/flyzard/invoicing.v2/internal/adapter/signing"
+	"github.com/flyzard/invoicing.v2/internal/config"
+	"github.com/flyzard/invoicing.v2/internal/domain"
 )
 
 func main() {

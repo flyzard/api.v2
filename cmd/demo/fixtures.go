@@ -5,7 +5,7 @@ import (
 	"log"
 	"time"
 
-	"github.com/flyzard/invoicing.v2/domain"
+	"github.com/flyzard/invoicing.v2/internal/domain"
 )
 
 // fixtures is the shared cast of objects every scenario draws from.
@@ -113,4 +113,3 @@ func makeSeries(id string, dt domain.DocumentType, atCode string, at time.Time) 
 	}
 	return &s
 }
-

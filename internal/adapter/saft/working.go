@@ -1,6 +1,6 @@
 package saft
 
-import "github.com/flyzard/invoicing.v2/domain"
+import "github.com/flyzard/invoicing.v2/internal/domain"
 
 // xmlWorkingDocuments mirrors SAF-T SourceDocuments/WorkingDocuments.
 // Working docs always credit the issuer: TotalDebit is always 0.
@@ -12,20 +12,20 @@ type xmlWorkingDocuments struct {
 }
 
 type xmlWorkDocument struct {
-	DocumentNumber  string            `xml:"DocumentNumber"`
-	ATCUD           string            `xml:"ATCUD"`
-	DocumentStatus  xmlWorkStatus     `xml:"DocumentStatus"`
-	Hash            string            `xml:"Hash"`
-	HashControl     string            `xml:"HashControl"`
-	Period          int               `xml:"Period"`
-	WorkDate        string            `xml:"WorkDate"`
-	WorkType        string            `xml:"WorkType"`
-	SourceID        string            `xml:"SourceID"`
-	EACCode         string            `xml:"EACCode,omitempty"`
-	SystemEntryDate string            `xml:"SystemEntryDate"`
-	CustomerID      string            `xml:"CustomerID"`
-	Lines           []xmlLine         `xml:"Line"`
-	DocumentTotals  xmlSimpleTotals   `xml:"DocumentTotals"`
+	DocumentNumber  string          `xml:"DocumentNumber"`
+	ATCUD           string          `xml:"ATCUD"`
+	DocumentStatus  xmlWorkStatus   `xml:"DocumentStatus"`
+	Hash            string          `xml:"Hash"`
+	HashControl     string          `xml:"HashControl"`
+	Period          int             `xml:"Period"`
+	WorkDate        string          `xml:"WorkDate"`
+	WorkType        string          `xml:"WorkType"`
+	SourceID        string          `xml:"SourceID"`
+	EACCode         string          `xml:"EACCode,omitempty"`
+	SystemEntryDate string          `xml:"SystemEntryDate"`
+	CustomerID      string          `xml:"CustomerID"`
+	Lines           []xmlLine       `xml:"Line"`
+	DocumentTotals  xmlSimpleTotals `xml:"DocumentTotals"`
 }
 
 type xmlWorkStatus struct {

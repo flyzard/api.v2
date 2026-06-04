@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"slices"
 
-	"github.com/flyzard/invoicing.v2/domain"
+	"github.com/flyzard/invoicing.v2/internal/domain"
 	"github.com/google/uuid"
 )
 

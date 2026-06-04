@@ -3,7 +3,7 @@ package saft
 import (
 	"time"
 
-	"github.com/flyzard/invoicing.v2/domain"
+	"github.com/flyzard/invoicing.v2/internal/domain"
 )
 
 // xmlHeader mirrors SAF-T 1.04_01 AuditFile/Header. Element order must match

@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/flyzard/invoicing.v2/domain"
+	"github.com/flyzard/invoicing.v2/internal/domain"
 	"github.com/google/uuid"
 	"golang.org/x/text/encoding/charmap"
 )
@@ -242,12 +242,12 @@ func TestBuildTax(t *testing.T) {
 	notSubj := domain.NotSubjectTax{Jurisdiction: jur, Reason: domain.M99, ReasonText: "Não sujeito"}
 
 	cases := []struct {
-		name        string
-		tax         domain.LineTax
-		wantType    string
-		wantPctSet  bool
-		wantAmtSet  bool
-		wantExempt  bool
+		name       string
+		tax        domain.LineTax
+		wantType   string
+		wantPctSet bool
+		wantAmtSet bool
+		wantExempt bool
 	}{
 		{"vat-normal", vatNormal, "IVA", true, false, false},
 		{"vat-exempt", vatExempt, "IVA", true, false, true},

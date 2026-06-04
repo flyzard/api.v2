@@ -63,7 +63,7 @@ func buildHeader(h Header) xmlHeader {
 		TaxEntity:                 taxEntity,
 		ProductCompanyTaxID:       h.Software.ProducerTaxID,
 		SoftwareCertificateNumber: h.Software.CertificateNumber,
-		ProductID:                 h.Software.ProductID(),
+		ProductID:                 h.Software.ProductID,
 		ProductVersion:            h.Software.Version,
 		HeaderComment:             h.HeaderComment,
 		Telephone:                 h.Issuer.Phone,

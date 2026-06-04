@@ -6,7 +6,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/flyzard/invoicing.v2/config"
 	"github.com/flyzard/invoicing.v2/domain"
 	"github.com/google/uuid"
 	"golang.org/x/text/encoding/charmap"
@@ -95,12 +94,11 @@ func TestExport_StructureIntact(t *testing.T) {
 				Country:       "PT",
 			},
 		},
-		Software: config.SoftwareIdentity{
+		Software: SoftwareIdentity{
 			ProducerTaxID:     "519348761",
-			SoftwareName:      "Test",
-			ProducerName:      "Producer",
-			Version:           "1.0.0",
 			CertificateNumber: "9999",
+			ProductID:         "Test/Producer",
+			Version:           "1.0.0",
 		},
 		Start:     time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC),
 		End:       time.Date(2026, 5, 31, 0, 0, 0, 0, time.UTC),

@@ -91,8 +91,13 @@ func writeSAFT(c *ctx, f *fixtures, sw config.SoftwareIdentity, now time.Time) {
 	end := start.AddDate(0, 1, -1)
 
 	hdr := saft.Header{
-		Issuer:    f.Issuer,
-		Software:  sw,
+		Issuer: f.Issuer,
+		Software: saft.SoftwareIdentity{
+			ProducerTaxID:     sw.ProducerTaxID,
+			CertificateNumber: sw.CertificateNumber,
+			ProductID:         sw.ProductID(),
+			Version:           sw.Version,
+		},
 		Start:     start,
 		End:       end,
 		CreatedAt: now,

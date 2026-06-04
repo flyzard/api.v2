@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/flyzard/invoicing.v2/config"
 	"github.com/flyzard/invoicing.v2/domain"
 	"golang.org/x/text/encoding/charmap"
 )
@@ -17,11 +16,22 @@ import (
 // SAF-T PT 1.04_01 default namespace.
 const saftNamespace = "urn:OECD:StandardAuditFile-Tax:PT_1.04_01"
 
+// SoftwareIdentity is the AT-certified producer/software metadata stamped
+// into AuditFile/Header (ProductCompanyTaxID, SoftwareCertificateNumber,
+// ProductID, ProductVersion). The caller maps its own config onto this
+// struct so the projector stays decoupled from configuration loading.
+type SoftwareIdentity struct {
+	ProducerTaxID     string
+	CertificateNumber string
+	ProductID         string // "SoftwareName/ProducerName"
+	Version           string
+}
+
 // Header holds the source values for AuditFile/Header; buildHeader projects
 // to wire format at marshal time so projected fields can't drift from source.
 type Header struct {
 	Issuer        domain.Company
-	Software      config.SoftwareIdentity
+	Software      SoftwareIdentity
 	Start, End    time.Time
 	CreatedAt     time.Time
 	HeaderComment string

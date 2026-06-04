@@ -15,6 +15,7 @@ import (
 	"github.com/flyzard/invoicing.v2/config"
 	"github.com/flyzard/invoicing.v2/domain"
 	"github.com/flyzard/invoicing.v2/saft"
+	"github.com/flyzard/invoicing.v2/signing"
 )
 
 func main() {
@@ -27,10 +28,25 @@ func main() {
 		log.Fatal(err)
 	}
 
+	var signer domain.Signer = stubSigner{}
+	signerName := "stub (dev — set AT_SIGNING_KEY_FILE for real signatures)"
+	if cfg.SigningKeyFile != "" {
+		pemBytes, err := os.ReadFile(cfg.SigningKeyFile)
+		if err != nil {
+			log.Fatalf("read signing key %s: %v", cfg.SigningKeyFile, err)
+		}
+		rs, err := signing.NewRSASigner(pemBytes, 1)
+		if err != nil {
+			log.Fatalf("signing key %s: %v", cfg.SigningKeyFile, err)
+		}
+		signer = rs
+		signerName = "RSA-SHA1 (Portaria 363/2010) · key version 1"
+	}
+
 	f := buildFixtures(clockBase)
 	c := &ctx{
 		f:      f,
-		signer: stubSigner{},
+		signer: signer,
 		clock:  newClock(clockBase, time.Minute),
 		store:  newStore(),
 		qr: domain.QRConfig{
@@ -44,6 +60,7 @@ func main() {
 	fmt.Printf("Software: %s %s · cert %s\n", cfg.Software.ProductID(), cfg.Software.Version, cfg.Software.CertificateNumber)
 	fmt.Printf("Document date: %s · clock starts at %s\n",
 		today.Format("2006-01-02"), clockBase.Format("2006-01-02T15:04 MST"))
+	fmt.Printf("Signer: %s\n", signerName)
 
 	scenario51(c, today)
 	scenario52(c, today)

@@ -1,3 +1,10 @@
 .vscode/
 
 .env
+
+# AT signing key material — never commit. Test fixtures in signing/testdata/
+# are exempt: dedicated inert test keys, not production material.
+/*.pem
+/chave_publica.txt
+
+out/*

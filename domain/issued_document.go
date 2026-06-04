@@ -129,7 +129,7 @@ func (o IssueOptions) resolveSourceBilling() (SourceBilling, error) {
 // Implementations apply RSA-SHA1 with the AT-certified private key and return
 // base64 hash plus the HashControl string. Domain stays signer-agnostic.
 type Signer interface {
-	Sign(prevHash, canonical string) (hash, control string, err error)
+	Sign(canonical string) (hash, control string, err error)
 }
 
 // IssuedDocument is the family-agnostic immutable record of an issued source document.
@@ -246,7 +246,7 @@ func issueCommon(draft *CommonDraftDocument, series *Series, signer Signer, sour
 	}
 
 	canonical := canonicalHashInput(date, sysEntry, number.Format(), draft.Totals.GrossTotal, series.LastHash)
-	hashStr, controlStr, err := signer.Sign(series.LastHash, canonical)
+	hashStr, controlStr, err := signer.Sign(canonical)
 	if err != nil {
 		return IssuedDocument{}, fmt.Errorf("sign: %w", err)
 	}

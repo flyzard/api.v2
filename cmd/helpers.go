@@ -14,13 +14,13 @@ import (
 	"github.com/flyzard/invoicing.v2/domain"
 )
 
-// stubSigner produces a deterministic 172-char base64 hash from prevHash and
-// the canonical signing line. NOT real RSA-SHA1 — this is dev plumbing so the
-// demo can advance the hash chain without an AT-issued private key.
+// stubSigner produces a deterministic 172-char base64 hash from the canonical
+// signing line. NOT real RSA-SHA1 — this is dev plumbing so the demo can advance
+// the hash chain without an AT-issued private key.
 type stubSigner struct{}
 
-func (stubSigner) Sign(prevHash, canonical string) (string, string, error) {
-	payload := []byte(prevHash + "|" + canonical)
+func (stubSigner) Sign(canonical string) (string, string, error) {
+	payload := []byte(canonical)
 	a := sha512.Sum512(payload)
 	b := sha512.Sum512(a[:])
 	full := append(a[:], b[:]...) // 128 bytes → base64 is exactly 172 chars

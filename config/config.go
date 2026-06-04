@@ -7,7 +7,8 @@ import (
 
 // Config is the application configuration assembled by Load.
 type Config struct {
-	Software SoftwareIdentity
+	Software       SoftwareIdentity
+	SigningKeyFile string
 }
 
 // Load merges the optional .env file at envPath into the process environment
@@ -27,6 +28,7 @@ func Load(envPath string) (Config, error) {
 			CertificateNumber: os.Getenv("CERTIFICATE_NUMBER"),
 		},
 	}
+	cfg.SigningKeyFile = os.Getenv("AT_SIGNING_KEY_FILE")
 	if err := cfg.Software.Validate(); err != nil {
 		return Config{}, fmt.Errorf("software identity (from %s + environment): %w", envPath, err)
 	}

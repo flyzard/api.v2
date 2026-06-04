@@ -87,11 +87,14 @@ func IssueStockMovement(draft *DraftStockMovement, series *Series, signer Signer
 	}
 	// F-SAFT-16: a guia cannot be issued AFTER the goods have already moved
 	// (no retro-active transport). Compare on the same Lisbon clock the system
-	// entry was stamped with.
-	startLisbon := draft.MovementStartTime.In(lisbonLocation)
-	if startLisbon.Before(issued.SystemEntryDate) {
-		return StockMovement{}, fmt.Errorf("movement_start_time %s precedes system entry %s",
-			startLisbon.Format(time.RFC3339), issued.SystemEntryDate.Format(time.RFC3339))
+	// entry was stamped with. Skipped under recovery — a recovered paper guia
+	// necessarily started moving before its integration time.
+	if opts.Recovered == nil {
+		startLisbon := draft.MovementStartTime.In(lisbonLocation)
+		if startLisbon.Before(issued.SystemEntryDate) {
+			return StockMovement{}, fmt.Errorf("movement_start_time %s precedes system entry %s",
+				startLisbon.Format(time.RFC3339), issued.SystemEntryDate.Format(time.RFC3339))
+		}
 	}
 	if draft.ThirdParties {
 		issued.Status = StatusThirdParty

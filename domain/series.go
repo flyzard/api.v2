@@ -85,6 +85,18 @@ func NewSeries(id string, docType DocumentType) (Series, error) {
 	}, nil
 }
 
+// NewRecoverySeries creates a series dedicated to integrating recovered
+// documents (Portaria 363/2010). Recovery issuance is only legal into such a
+// series; normal issuance into it is rejected (see validateIssueContext).
+func NewRecoverySeries(id string, docType DocumentType) (Series, error) {
+	s, err := NewSeries(id, docType)
+	if err != nil {
+		return Series{}, err
+	}
+	s.ProcessingMeans = ProcessingRecovery
+	return s, nil
+}
+
 func (s Series) IsRegistered() bool { return s.ATCode != "" }
 func (s Series) CanIssue() bool     { return s.Active && s.IsRegistered() }
 

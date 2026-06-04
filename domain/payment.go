@@ -314,6 +314,13 @@ func IssuePayment(draft *PaymentDraft, series *Series, now time.Time, totals Pay
 	if err != nil {
 		return Payment{}, err
 	}
+	// Receipts carry no Hash/HashControl in SAF-T — there is nowhere to record
+	// an original-document reference. Recovery for payments is SourcePayment="M"
+	// plus the recovery-series policy only.
+	if opts.Recovered != nil {
+		return Payment{}, fmt.Errorf("IssueOptions.Recovered is not applicable to payments (receipts carry no HashControl)")
+	}
+	recovering := sourcePayment == SourceBillingManual
 	txDate := draft.TransactionDate.In(lisbonLocation)
 	sysEntry := now.In(lisbonLocation)
 	if draft.Currency != nil && !dateOnly(draft.Currency.Date).Equal(dateOnly(txDate)) {
@@ -322,7 +329,7 @@ func IssuePayment(draft *PaymentDraft, series *Series, now time.Time, totals Pay
 	}
 	// PaymentDraft.Validate guarantees draft.Type is RC or RG; validateIssueContext
 	// then enforces series.DocType == draft.Type, which implies series is a receipt.
-	if err := validateIssueContext(series, draft.Type, draft.SourceID, txDate, sysEntry); err != nil {
+	if err := validateIssueContext(series, draft.Type, draft.SourceID, txDate, sysEntry, recovering); err != nil {
 		return Payment{}, err
 	}
 	if totals.GrossTotal < 0 || totals.NetTotal < 0 || totals.TaxPayable < 0 {

@@ -93,12 +93,8 @@ type IssueOptions struct {
 	// FIX_PLAN.md). Pass a production calendar that knows national/regional
 	// holidays once wired.
 	Calendar HolidayCalendar
-	// Recovery flips to true for documents ingested via manual / backup
-	// recovery flows (Portaria 363/2010). Bypasses the 5-working-day emission
-	// guard AND the monotonic-date-in-series guard, since recovery necessarily
-	// ingests documents out of normal sequence (originals may pre-date prior
-	// recovered entries).
-	Recovery bool
+	// Recovered identifies the original document for recovery flows
+	Recovered *RecoveredRef
 	// Reader resolves cross-document references for invariants that need them
 	// (e.g. ND product-set vs originating invoice). Required when issuing ND.
 	Reader IssuedDocumentReader
@@ -173,12 +169,16 @@ func canonicalHashInput(invoiceDate, systemEntry time.Time, number string, gross
 }
 
 // validateIssueContext checks the cross-cutting issuance guards that any document family
-// has to satisfy before consuming the next sequence number: the series must be ready to
-// issue, its doc type must match the draft's, the system entry date can't precede the
-// reference date, and a source id is mandatory. Shared by Issue and IssuePayment.
-func validateIssueContext(series *Series, docType DocumentType, sourceID string, refDate, now time.Time) error {
+// has to satisfy before consuming the next sequence number
+func validateIssueContext(series *Series, docType DocumentType, sourceID string, refDate, now time.Time, recovering bool) error {
 	if !series.CanIssue() {
 		return fmt.Errorf("series %q cannot issue (not registered or inactive)", series.ID)
+	}
+	if recovering && series.ProcessingMeans != ProcessingRecovery {
+		return fmt.Errorf("%w: series %q", ErrNotRecoverySeries, series.ID)
+	}
+	if !recovering && series.ProcessingMeans == ProcessingRecovery {
+		return fmt.Errorf("%w: series %q", ErrRecoverySeriesMisuse, series.ID)
 	}
 	if series.DocType != docType {
 		return fmt.Errorf("series doc type %s does not match draft %s", series.DocType, docType)
@@ -227,16 +227,28 @@ func issueCommon(draft *CommonDraftDocument, series *Series, signer Signer, sour
 	if err != nil {
 		return IssuedDocument{}, err
 	}
+	recovering := sourceBilling == SourceBillingManual
+	if recovering && opts.Recovered == nil {
+		return IssuedDocument{}, fmt.Errorf("SourceBilling %q requires IssueOptions.Recovered (original document reference)", SourceBillingManual)
+	}
+	if !recovering && opts.Recovered != nil {
+		return IssuedDocument{}, fmt.Errorf("IssueOptions.Recovered requires SourceBilling %q, got %q", SourceBillingManual, sourceBilling)
+	}
+	if recovering {
+		if err := opts.Recovered.Validate(); err != nil {
+			return IssuedDocument{}, fmt.Errorf("recovered ref: %w", err)
+		}
+	}
 	// AT signs and exports in Europe/Lisbon wall time. Normalize both endpoints
 	// here so canonical hash, Period, and stored timestamps all share that clock.
 	date := draft.Date.In(lisbonLocation)
 	sysEntry := now.In(lisbonLocation)
 
-	if err := validateIssueContext(series, draft.DocumentType, sourceID, date, sysEntry); err != nil {
+	if err := validateIssueContext(series, draft.DocumentType, sourceID, date, sysEntry, recovering); err != nil {
 		return IssuedDocument{}, err
 	}
 
-	if !opts.Recovery {
+	if !recovering {
 		if series.LastDate != nil && dateOnly(date).Before(dateOnly(*series.LastDate)) {
 			return IssuedDocument{}, fmt.Errorf("%w: %s < %s", ErrDateRegression, date.Format("2006-01-02"), series.LastDate.Format("2006-01-02"))
 		}
@@ -260,6 +272,11 @@ func issueCommon(draft *CommonDraftDocument, series *Series, signer Signer, sour
 	hashStr, controlStr, err := signer.Sign(canonical)
 	if err != nil {
 		return IssuedDocument{}, fmt.Errorf("sign: %w", err)
+	}
+	if recovering {
+		// M/D-form HashControl per Portaria 363/2010; shape re-checked by
+		// HashControl.Validate below.
+		controlStr = opts.Recovered.controlFor(controlStr, draft.DocumentType)
 	}
 	hash := Hash(hashStr)
 	control := HashControl(controlStr)

@@ -25,4 +25,6 @@ var (
 	ErrDateRegression             = errors.New("document date precedes previous issue in series")
 	ErrSubCentPrecision           = errors.New("money value has sub-cent precision")
 	ErrCancellationDeadlinePassed = errors.New("cancellation deadline has passed; use recovery flow")
+	ErrNotRecoverySeries          = errors.New("recovery documents require a dedicated recovery series")
+	ErrRecoverySeriesMisuse       = errors.New("recovery series cannot issue normal documents")
 )

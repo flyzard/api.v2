@@ -75,6 +75,11 @@ func buildPayments(payments []domain.Payment) xmlPayments {
 	var debit, credit domain.Money
 	for _, p := range payments {
 		out = append(out, buildPayment(p))
+		// TotalDebit/TotalCredit exclude cancelled documents (Portaria 302/2016
+		// field rules); cancelled payments stay listed and counted in NumberOfEntries.
+		if p.Status == domain.StatusCancelled {
+			continue
+		}
 		for _, l := range p.Lines {
 			if l.Movement == nil {
 				continue
@@ -117,6 +122,7 @@ func buildPayment(p domain.Payment) xmlPayment {
 		DocumentStatus: xmlPaymentStatus{
 			PaymentStatus:     string(p.Status),
 			PaymentStatusDate: fmtDateTime(p.StatusDate),
+			Reason:            p.Reason,
 			SourceID:          p.SourceID,
 			SourcePayment:     string(p.SourcePayment),
 		},

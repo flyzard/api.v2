@@ -220,16 +220,18 @@ func (l PaymentLine) Validate() error {
 // Unlike IssuedDocument it carries no Hash/HashControl (per this XSD revision),
 // but the series counter still advances at issue time.
 type Payment struct {
-	Number          DocNumber       `json:"number"`
-	ATCUD           ATCUD           `json:"atcud"`
-	Period          Period          `json:"period,omitempty"`
-	TransactionID   string          `json:"transaction_id,omitempty"`
-	TransactionDate time.Time       `json:"transaction_date"`
-	Type            DocumentType    `json:"type"`
-	Description     string          `json:"description,omitempty"`
-	SystemID        string          `json:"system_id,omitempty"`
-	Status          DocumentStatus  `json:"status"`
-	StatusDate      time.Time       `json:"status_date"`
+	Number          DocNumber      `json:"number"`
+	ATCUD           ATCUD          `json:"atcud"`
+	Period          Period         `json:"period,omitempty"`
+	TransactionID   string         `json:"transaction_id,omitempty"`
+	TransactionDate time.Time      `json:"transaction_date"`
+	Type            DocumentType   `json:"type"`
+	Description     string         `json:"description,omitempty"`
+	SystemID        string         `json:"system_id,omitempty"`
+	Status          DocumentStatus `json:"status"`
+	StatusDate      time.Time      `json:"status_date"`
+	// Reason is the cancellation justification when Status == "A" (SAF-T PaymentStatus.Reason).
+	Reason          string          `json:"reason,omitempty"`
 	SourcePayment   SourcePayment   `json:"source_payment"`
 	Methods         []PaymentMethod `json:"methods,omitempty"`
 	SourceID        string          `json:"source_id"`
@@ -332,6 +334,9 @@ func IssuePayment(draft *PaymentDraft, series *Series, now time.Time, totals Pay
 	if err := validateIssueContext(series, draft.Type, draft.SourceID, txDate, sysEntry, recovering); err != nil {
 		return Payment{}, err
 	}
+	if !recovering && series.LastDate != nil && dateOnly(txDate).Before(dateOnly(*series.LastDate)) {
+		return Payment{}, fmt.Errorf("%w: %s < %s", ErrDateRegression, txDate.Format("2006-01-02"), series.LastDate.Format("2006-01-02"))
+	}
 	if totals.GrossTotal < 0 || totals.NetTotal < 0 || totals.TaxPayable < 0 {
 		return Payment{}, fmt.Errorf("totals must be non-negative")
 	}
@@ -366,4 +371,32 @@ func IssuePayment(draft *PaymentDraft, series *Series, now time.Time, totals Pay
 	series.AppendIssue(seq, "", txDate, sysEntry)
 
 	return p, nil
+}
+
+// Cancel marks the payment as cancelled (Status = "A") if the e-Fatura
+// deadline has not passed — same deadline rule as IssuedDocument.Cancel,
+// anchored on TransactionDate. Receipts only transition N -> A
+// (familyReceipt status set); there is no recovery flow past the deadline
+// because receipts carry no HashControl.
+func (p *Payment) Cancel(reason string, at time.Time) error {
+	switch p.Status {
+	case StatusNormal:
+		// only permitted source state for receipts
+	case StatusCancelled:
+		return fmt.Errorf("payment already cancelled")
+	default:
+		return fmt.Errorf("cannot cancel from status %q", p.Status)
+	}
+	if len(reason) > MaxLenCancellationReason {
+		return fmt.Errorf("cancellation reason exceeds %d chars", MaxLenCancellationReason)
+	}
+
+	deadline := cancellationDeadline(p.TransactionDate)
+	if time.Now().After(deadline) {
+		return fmt.Errorf("%w: %s", ErrCancellationDeadlinePassed, deadline.Format(time.RFC3339))
+	}
+	p.Status = StatusCancelled
+	p.Reason = reason
+	p.StatusDate = at.In(lisbonLocation)
+	return nil
 }

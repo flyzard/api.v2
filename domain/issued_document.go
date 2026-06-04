@@ -199,6 +199,26 @@ func dateOnly(t time.Time) time.Time {
 	return time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, t.Location())
 }
 
+// nextDocIdentity derives the next sequence number and its DocNumber/ATCUD/Period
+// from the series state. Shared by issueCommon and IssuePayment so the
+// seq == LastNum+1 contract (see Series.AppendIssue) has a single source.
+func nextDocIdentity(series *Series, docType DocumentType, date time.Time) (int, DocNumber, ATCUD, Period, error) {
+	seq := series.LastNum + 1
+	number, err := NewDocNumber(docType, series.ID, seq)
+	if err != nil {
+		return 0, DocNumber{}, "", 0, err
+	}
+	atcud, err := NewATCUD(*series, seq)
+	if err != nil {
+		return 0, DocNumber{}, "", 0, err
+	}
+	period, err := NewPeriod(int(date.Month()))
+	if err != nil {
+		return 0, DocNumber{}, "", 0, err
+	}
+	return seq, number, atcud, period, nil
+}
+
 // issueCommon advances the series counter and produces a signed IssuedDocument.
 // Caller MUST have run draft.Validate() — not re-checked here so lines validate once.
 // On error the series is untouched. Caller MUST serialize per Series.ID inside a transaction.
@@ -231,16 +251,7 @@ func issueCommon(draft *CommonDraftDocument, series *Series, signer Signer, sour
 
 	draft.CalculateTotals()
 
-	seq := series.LastNum + 1
-	number, err := NewDocNumber(draft.DocumentType, series.ID, seq)
-	if err != nil {
-		return IssuedDocument{}, err
-	}
-	atcud, err := NewATCUD(*series, seq)
-	if err != nil {
-		return IssuedDocument{}, err
-	}
-	period, err := NewPeriod(int(date.Month()))
+	seq, number, atcud, period, err := nextDocIdentity(series, draft.DocumentType, date)
 	if err != nil {
 		return IssuedDocument{}, err
 	}

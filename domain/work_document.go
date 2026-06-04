@@ -24,12 +24,6 @@ func (d *DraftWorkDocument) Validate() error {
 	if !d.DocumentType.IsWorking() {
 		return fmt.Errorf("not a working doc type: %s", d.DocumentType)
 	}
-	// Working lines require Tax in practice; only Movement allows nil-Tax (non-valued GT).
-	for i, line := range d.Lines {
-		if line.Tax == nil {
-			return fmt.Errorf("line %d: working line requires Tax", i)
-		}
-	}
 	return nil
 }
 

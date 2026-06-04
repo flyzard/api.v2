@@ -42,17 +42,18 @@ const (
 
 // docTypeRules captures the SAF-T family classification plus per-doctype business rules that the validator enforces uniformly.
 type docTypeRules struct {
-	Family      docFamily
-	RequiresRef bool // every line must carry a DocReference (AT rule for NC/ND)
-	AllowsStamp bool // line may carry StampTax (false for transport: XSD MovementTax restriction)
+	Family          docFamily
+	RequiresRef     bool // every line must carry a DocReference (AT rule for NC/ND)
+	AllowsStamp     bool // line may carry StampTax (false for transport: XSD MovementTax restriction)
+	RequiresLineTax bool // every line must carry Tax (sales/working per XSD; transport has its own valued-guia rule)
 }
 
 var documentTypes = map[DocumentType]docTypeRules{
-	FT: {Family: familySales, AllowsStamp: true},
-	FS: {Family: familySales, AllowsStamp: true},
-	FR: {Family: familySales, AllowsStamp: true},
-	NC: {Family: familySales, AllowsStamp: true, RequiresRef: true},
-	ND: {Family: familySales, AllowsStamp: true, RequiresRef: true},
+	FT: {Family: familySales, AllowsStamp: true, RequiresLineTax: true},
+	FS: {Family: familySales, AllowsStamp: true, RequiresLineTax: true},
+	FR: {Family: familySales, AllowsStamp: true, RequiresLineTax: true},
+	NC: {Family: familySales, AllowsStamp: true, RequiresRef: true, RequiresLineTax: true},
+	ND: {Family: familySales, AllowsStamp: true, RequiresRef: true, RequiresLineTax: true},
 
 	GT: {Family: familyTransport},
 	GR: {Family: familyTransport},
@@ -60,12 +61,12 @@ var documentTypes = map[DocumentType]docTypeRules{
 	GC: {Family: familyTransport},
 	GD: {Family: familyTransport},
 
-	OR: {Family: familyWorking, AllowsStamp: true},
-	PF: {Family: familyWorking, AllowsStamp: true},
-	NE: {Family: familyWorking, AllowsStamp: true},
-	CM: {Family: familyWorking, AllowsStamp: true},
-	FC: {Family: familyWorking, AllowsStamp: true},
-	FO: {Family: familyWorking, AllowsStamp: true},
+	OR: {Family: familyWorking, AllowsStamp: true, RequiresLineTax: true},
+	PF: {Family: familyWorking, AllowsStamp: true, RequiresLineTax: true},
+	NE: {Family: familyWorking, AllowsStamp: true, RequiresLineTax: true},
+	CM: {Family: familyWorking, AllowsStamp: true, RequiresLineTax: true},
+	FC: {Family: familyWorking, AllowsStamp: true, RequiresLineTax: true},
+	FO: {Family: familyWorking, AllowsStamp: true, RequiresLineTax: true},
 
 	RC: {Family: familyReceipt},
 	RG: {Family: familyReceipt},

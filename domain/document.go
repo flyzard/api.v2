@@ -82,6 +82,10 @@ func (d *CommonDraftDocument) Validate() error {
 		if rules.RequiresRef && len(line.References) == 0 {
 			return fmt.Errorf("line %d: %s requires References (AT business rule)", i, d.DocumentType)
 		}
+		// Sales/working lines require Tax per XSD; only Movement allows nil-Tax (non-valued GT, §5.11b).
+		if rules.RequiresLineTax && line.Tax == nil {
+			return fmt.Errorf("line %d: %s requires Tax on every line", i, d.DocumentType)
+		}
 		if !rules.AllowsStamp {
 			if _, isStamp := line.Tax.(StampTax); isStamp {
 				return fmt.Errorf("line %d: stamp duty not allowed on %s", i, d.DocumentType)

@@ -9,11 +9,12 @@ import (
 type ProductType string
 
 // SAF-T (PT) ProductType enum per Portaria 302/2016 + 2025 codes:
-//   P — Products (goods)
-//   S — Services
-//   O — Other (charges/non-product line items)
-//   E — Excise duties (IEC) lines
-//   I — Parafiscal taxes / charges (taxas)
+//
+//	P — Products (goods)
+//	S — Services
+//	O — Other (charges/non-product line items)
+//	E — Excise duties (IEC) lines
+//	I — Parafiscal taxes / charges (taxas)
 const (
 	ProductTypeGoods      ProductType = "P"
 	ProductTypeService    ProductType = "S"

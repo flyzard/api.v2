@@ -24,23 +24,23 @@ const (
 )
 
 type Series struct {
-	ID               string          `json:"id"`
-	DocType          DocumentType    `json:"doc_type"`
-	ATCode           string          `json:"at_code,omitempty"`
-	ATStatus         SeriesATStatus  `json:"at_status"`
-	RegistrationDate *time.Time      `json:"registration_date,omitempty"`
-	Year             *int            `json:"year,omitempty"`
-	LastNum          int             `json:"last_num"`
-	LastHash         string          `json:"last_hash,omitempty"`
-	LastDate         *time.Time      `json:"last_date,omitempty"`
-	LastSystemDate   *time.Time      `json:"last_system_date,omitempty"`
+	ID               string         `json:"id"`
+	DocType          DocumentType   `json:"doc_type"`
+	ATCode           string         `json:"at_code,omitempty"`
+	ATStatus         SeriesATStatus `json:"at_status"`
+	RegistrationDate *time.Time     `json:"registration_date,omitempty"`
+	Year             *int           `json:"year,omitempty"`
+	LastNum          int            `json:"last_num"`
+	LastHash         string         `json:"last_hash,omitempty"`
+	LastDate         *time.Time     `json:"last_date,omitempty"`
+	LastSystemDate   *time.Time     `json:"last_system_date,omitempty"`
 	// Version is bumped on every successful AppendIssue. Persistence layers compare it
 	// in the UPDATE WHERE Version=? clause to detect concurrent issuance against the
 	// same series. The domain stays single-threaded; this is bookkeeping only.
-	Version uint64 `json:"version"`
-	Active  bool   `json:"active"`
-	FinalizedAt      *time.Time      `json:"finalized_at,omitempty"`
-	ProcessingMeans  ProcessingMeans `json:"processing_means"`
+	Version         uint64          `json:"version"`
+	Active          bool            `json:"active"`
+	FinalizedAt     *time.Time      `json:"finalized_at,omitempty"`
+	ProcessingMeans ProcessingMeans `json:"processing_means"`
 }
 
 var seriesCharset = regexp.MustCompile(`^[A-Za-z0-9._\-/]+$`)

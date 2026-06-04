@@ -306,7 +306,7 @@ type PaymentTotals struct {
 // IssuePayment advances the series counter and produces an immutable Payment.
 //
 // CONCURRENCY: same rules as Issue — caller must serialize per Series.ID and run inside a transaction.
-func IssuePayment(draft *PaymentDraft, series *Series, sourceID string, now time.Time, totals PaymentTotals, opts IssueOptions) (Payment, error) {
+func IssuePayment(draft *PaymentDraft, series *Series, now time.Time, totals PaymentTotals, opts IssueOptions) (Payment, error) {
 	if err := draft.Validate(); err != nil {
 		return Payment{}, fmt.Errorf("draft: %w", err)
 	}
@@ -322,23 +322,14 @@ func IssuePayment(draft *PaymentDraft, series *Series, sourceID string, now time
 	}
 	// PaymentDraft.Validate guarantees draft.Type is RC or RG; validateIssueContext
 	// then enforces series.DocType == draft.Type, which implies series is a receipt.
-	if err := validateIssueContext(series, draft.Type, sourceID, txDate, sysEntry); err != nil {
+	if err := validateIssueContext(series, draft.Type, draft.SourceID, txDate, sysEntry); err != nil {
 		return Payment{}, err
 	}
 	if totals.GrossTotal < 0 || totals.NetTotal < 0 || totals.TaxPayable < 0 {
 		return Payment{}, fmt.Errorf("totals must be non-negative")
 	}
 
-	seq := series.LastNum + 1
-	number, err := NewDocNumber(draft.Type, series.ID, seq)
-	if err != nil {
-		return Payment{}, err
-	}
-	atcud, err := NewATCUD(*series, seq)
-	if err != nil {
-		return Payment{}, err
-	}
-	period, err := NewPeriod(int(txDate.Month()))
+	seq, number, atcud, period, err := nextDocIdentity(series, draft.Type, txDate)
 	if err != nil {
 		return Payment{}, err
 	}
@@ -356,7 +347,7 @@ func IssuePayment(draft *PaymentDraft, series *Series, sourceID string, now time
 		StatusDate:      sysEntry,
 		SourcePayment:   sourcePayment,
 		Methods:         draft.Methods,
-		SourceID:        sourceID,
+		SourceID:        draft.SourceID,
 		SystemEntryDate: sysEntry,
 		Customer:        draft.Customer,
 		Lines:           draft.Lines,

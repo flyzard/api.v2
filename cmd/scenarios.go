@@ -85,7 +85,7 @@ func (c *ctx) issueWork(draft *domain.DraftWorkDocument, opts domain.IssueOption
 }
 
 func (c *ctx) issuePayment(draft *domain.PaymentDraft, totals domain.PaymentTotals, opts domain.IssueOptions) domain.Payment {
-	doc, err := domain.IssuePayment(draft, c.f.Series[draft.Type], c.f.IssuerUser.Email, c.clock.Tick(), totals, opts)
+	doc, err := domain.IssuePayment(draft, c.f.Series[draft.Type], c.clock.Tick(), totals, opts)
 	if err != nil {
 		log.Fatalf("issue payment %s: %v", draft.Type, err)
 	}

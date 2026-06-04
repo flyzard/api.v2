@@ -1,8 +1,6 @@
 // Package saft is the SAF-T (PT) XML projector. It consumes typed family values produced by package domain and emits a Windows-1252 XML file that
 // validates against SAFTPT_1_04_01.xsd.
-//
-// The projector is pure projection: it does not mutate inputs and has no dependencies on cmd. See SAFT_EXPORT_PLAN.md for scope, gaps closed in
-// Phase A, and the element mapping in §7.
+
 package saft
 
 import (

@@ -140,12 +140,6 @@ func (d *DraftSalesInvoice) Validate() error {
 	if !d.DocumentType.IsSales() {
 		return fmt.Errorf("not a sales doc type: %s", d.DocumentType)
 	}
-	// Sales lines require Tax per XSD; only Movement allows nil-Tax (non-valued GT, §5.11b).
-	for i, line := range d.Lines {
-		if line.Tax == nil {
-			return fmt.Errorf("line %d: sales line requires Tax", i)
-		}
-	}
 	if err := validateShipPoint("ship_to", d.ShipTo); err != nil {
 		return err
 	}
@@ -174,6 +168,15 @@ func (d *DraftSalesInvoice) Validate() error {
 func IssueSalesInvoice(draft *DraftSalesInvoice, series *Series, signer Signer, sourceID string, now time.Time, opts IssueOptions, qr QRConfig) (SalesInvoice, error) {
 	if err := draft.Validate(); err != nil {
 		return SalesInvoice{}, fmt.Errorf("draft: %w", err)
+	}
+	// Mirrors IssuePayment: the FX rate must be dated on the invoice date so it
+	// cannot drift between draft prep and issuance (SalesInvoiceFields.Currency contract).
+	if draft.Currency != nil {
+		date := draft.Date.In(lisbonLocation)
+		if !dateOnly(draft.Currency.Date).Equal(dateOnly(date)) {
+			return SalesInvoice{}, fmt.Errorf("currency rate date %s does not match invoice date %s",
+				draft.Currency.Date.Format("2006-01-02"), date.Format("2006-01-02"))
+		}
 	}
 	if draft.DocumentType == ND {
 		if opts.Reader == nil {

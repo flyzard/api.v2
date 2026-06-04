@@ -387,13 +387,8 @@ func (p *Payment) Cancel(reason string, at time.Time) error {
 	default:
 		return fmt.Errorf("cannot cancel from status %q", p.Status)
 	}
-	if len(reason) > MaxLenCancellationReason {
-		return fmt.Errorf("cancellation reason exceeds %d chars", MaxLenCancellationReason)
-	}
-
-	deadline := cancellationDeadline(p.TransactionDate)
-	if time.Now().After(deadline) {
-		return fmt.Errorf("%w: %s", ErrCancellationDeadlinePassed, deadline.Format(time.RFC3339))
+	if err := validateCancellation(reason, p.TransactionDate); err != nil {
+		return err
 	}
 	p.Status = StatusCancelled
 	p.Reason = reason

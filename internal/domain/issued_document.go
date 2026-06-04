@@ -326,17 +326,26 @@ func (d *IssuedDocument) Cancel(reason string, at time.Time) error {
 		// they're terminal states from the AT-cert perspective.
 		return fmt.Errorf("cannot cancel from status %q", d.Status)
 	}
-	if len(reason) > MaxLenCancellationReason {
-		return fmt.Errorf("cancellation reason exceeds %d chars", MaxLenCancellationReason)
-	}
-
-	deadline := cancellationDeadline(d.Date)
-	if time.Now().After(deadline) {
-		return fmt.Errorf("%w: %s", ErrCancellationDeadlinePassed, deadline.Format(time.RFC3339))
+	if err := validateCancellation(reason, d.Date); err != nil {
+		return err
 	}
 	d.Status = StatusCancelled
 	d.Reason = reason
 	d.StatusDate = at.In(lisbonLocation)
+	return nil
+}
+
+// validateCancellation enforces the shared cancellation rules: reason length
+// and the e-Fatura deadline anchored on the document's date (InvoiceDate /
+// TransactionDate).
+func validateCancellation(reason string, anchor time.Time) error {
+	if len(reason) > MaxLenCancellationReason {
+		return fmt.Errorf("cancellation reason exceeds %d chars", MaxLenCancellationReason)
+	}
+	deadline := cancellationDeadline(anchor)
+	if time.Now().After(deadline) {
+		return fmt.Errorf("%w: %s", ErrCancellationDeadlinePassed, deadline.Format(time.RFC3339))
+	}
 	return nil
 }
 

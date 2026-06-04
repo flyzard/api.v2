@@ -8,8 +8,9 @@ import (
 )
 
 // docNumberPattern mirrors the XSD InvoiceNo/DocumentNumber/PaymentRefNo regex.
-// Form: "{Type} {Series}/{Seq}", e.g. "FT A/1".
 var docNumberPattern = regexp.MustCompile(`^[^ ]+ [^/^ ]+/[0-9]+$`)
+
+const MaxLenDocNumber = 60
 
 // DocNumber is the composite identifier printed on issued documents.
 type DocNumber struct {
@@ -48,8 +49,6 @@ func (d DocNumber) Format() string {
 }
 
 // ParseDocNumber inverts Format. Used by cross-document validation
-// (e.g. ND product-set checks) where references are stored as the formatted
-// "FT A/1" string and must be looked up via IssuedDocumentReader.
 func ParseDocNumber(s string) (DocNumber, error) {
 	space := strings.IndexByte(s, ' ')
 	slash := strings.LastIndexByte(s, '/')

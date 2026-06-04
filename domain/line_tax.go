@@ -9,6 +9,12 @@ import (
 // Distinct from the narrower TaxRegion enum used by the canonical VAT rate table.
 type TaxJurisdiction string
 
+const (
+	MaxLenStampTaxCode = 10
+	MinLenExemptReason = 6
+	MaxLenExemptReason = 60
+)
+
 func (j TaxJurisdiction) IsValid() bool {
 	if j == "PT-AC" || j == "PT-MA" {
 		return true

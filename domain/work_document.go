@@ -52,7 +52,7 @@ func (w *WorkDocument) MarkBilled(invoiceRef DocNumber, at time.Time) error {
 	return nil
 }
 
-func IssueWorkDocument(draft *DraftWorkDocument, series *Series, signer Signer, sourceID string, now time.Time, opts IssueOptions) (WorkDocument, error) {
+func IssueWorkDocument(draft *DraftWorkDocument, series *Series, signer Signer, sourceID string, now time.Time, opts IssueOptions, qr QRConfig) (WorkDocument, error) {
 	if err := draft.Validate(); err != nil {
 		return WorkDocument{}, fmt.Errorf("draft: %w", err)
 	}
@@ -60,5 +60,6 @@ func IssueWorkDocument(draft *DraftWorkDocument, series *Series, signer Signer, 
 	if err != nil {
 		return WorkDocument{}, err
 	}
+	issued.QRPayload = buildQRPayload(&issued, qr)
 	return WorkDocument{IssuedDocument: issued}, nil
 }

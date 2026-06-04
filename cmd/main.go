@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/flyzard/invoicing.v2/config"
+	"github.com/flyzard/invoicing.v2/domain"
 	"github.com/flyzard/invoicing.v2/saft"
 )
 
@@ -32,6 +33,10 @@ func main() {
 		signer: stubSigner{},
 		clock:  newClock(clockBase, time.Minute),
 		store:  newStore(),
+		qr: domain.QRConfig{
+			IssuerNIF:         f.Issuer.NIF,
+			CertificateNumber: cfg.Software.CertificateNumber,
+		},
 	}
 
 	fmt.Println("AT Certification Checklist — §5 walkthrough")

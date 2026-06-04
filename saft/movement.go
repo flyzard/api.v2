@@ -130,7 +130,7 @@ func buildMovementLine(l domain.DocumentLine) xmlMovementLine {
 		Quantity:           saftQty(l.Quantity),
 		UnitOfMeasure:      string(l.Product.Unit),
 		UnitPrice:          saftMoneyLine(l.EffectiveUnitPrice()),
-		Description:        l.Description,
+		Description:        l.Product.ProductDescription,
 		CreditAmount:       &net,
 	}
 	if disc := l.LineDiscountAmount(); disc > 0 {

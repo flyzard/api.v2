@@ -26,6 +26,8 @@ const (
 	PaymentMechanismBarter         PaymentMechanism = "PR"
 	PaymentMechanismBankTransfer   PaymentMechanism = "TB"
 	PaymentMechanismTitleVouchers  PaymentMechanism = "TR"
+
+	MaxLenPaymentDescription = 200
 )
 
 func (m PaymentMechanism) IsValid() bool {
@@ -218,22 +220,22 @@ func (l PaymentLine) Validate() error {
 // Unlike IssuedDocument it carries no Hash/HashControl (per this XSD revision),
 // but the series counter still advances at issue time.
 type Payment struct {
-	Number          DocNumber        `json:"number"`
-	ATCUD           ATCUD            `json:"atcud"`
-	Period          Period           `json:"period,omitempty"`
-	TransactionID   string           `json:"transaction_id,omitempty"`
-	TransactionDate time.Time        `json:"transaction_date"`
-	Type            DocumentType     `json:"type"`
-	Description     string           `json:"description,omitempty"`
-	SystemID        string           `json:"system_id,omitempty"`
-	Status          DocumentStatus   `json:"status"`
-	StatusDate      time.Time        `json:"status_date"`
-	SourcePayment   SourcePayment    `json:"source_payment"`
-	Methods         []PaymentMethod  `json:"methods,omitempty"`
-	SourceID        string           `json:"source_id"`
-	SystemEntryDate time.Time        `json:"system_entry_date"`
-	Customer        Customer         `json:"customer"`
-	Lines           []PaymentLine    `json:"lines"`
+	Number          DocNumber       `json:"number"`
+	ATCUD           ATCUD           `json:"atcud"`
+	Period          Period          `json:"period,omitempty"`
+	TransactionID   string          `json:"transaction_id,omitempty"`
+	TransactionDate time.Time       `json:"transaction_date"`
+	Type            DocumentType    `json:"type"`
+	Description     string          `json:"description,omitempty"`
+	SystemID        string          `json:"system_id,omitempty"`
+	Status          DocumentStatus  `json:"status"`
+	StatusDate      time.Time       `json:"status_date"`
+	SourcePayment   SourcePayment   `json:"source_payment"`
+	Methods         []PaymentMethod `json:"methods,omitempty"`
+	SourceID        string          `json:"source_id"`
+	SystemEntryDate time.Time       `json:"system_entry_date"`
+	Customer        Customer        `json:"customer"`
+	Lines           []PaymentLine   `json:"lines"`
 	PaymentTotals
 	Currency       *Currency        `json:"currency,omitempty"`
 	WithholdingTax []WithholdingTax `json:"withholding_tax,omitempty"`

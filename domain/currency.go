@@ -8,8 +8,7 @@ import (
 	"time"
 )
 
-// CurrencyCode is an ISO 4217 alphabetic code. EUR is excluded because the SAF-T Currency
-// block only appears on documents whose original currency is not EUR.
+// CurrencyCode is an ISO 4217 alphabetic code.
 type CurrencyCode string
 
 // currencyCodePattern mirrors the XSD CurrencyCode restriction (EUR intentionally omitted).
@@ -19,8 +18,7 @@ var currencyCodePattern = regexp.MustCompile(
 
 func (c CurrencyCode) IsValid() bool { return currencyCodePattern.MatchString(string(c)) }
 
-// NewCurrencyCode wraps a string in CurrencyCode after validating against the SAF-T
-// ISO 4217 subset (EUR excluded).
+// NewCurrencyCode wraps a string in CurrencyCode after validating
 func NewCurrencyCode(s string) (CurrencyCode, error) {
 	c := CurrencyCode(s)
 	if !c.IsValid() {
@@ -33,8 +31,7 @@ func (c *CurrencyCode) UnmarshalJSON(data []byte) error {
 	return unmarshalString(data, NewCurrencyCode, c)
 }
 
-// ExchangeRate uses 6-decimal scale to fit both strong (USD≈0.92/EUR) and weak (JPY≈170/EUR)
-// currencies without precision loss.
+// ExchangeRate uses 6-decimal scale to fit both strong (USD≈0.92/EUR) and weak (JPY≈170/EUR) currencies without precision loss.
 type ExchangeRate int64
 
 const exchangeRateScale = 1_000_000

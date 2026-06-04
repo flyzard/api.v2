@@ -10,10 +10,10 @@ import (
 )
 
 type Totals struct {
-	NetTotal   Money        `json:"net_total"`
-	TaxTotal   Money        `json:"tax_total"`
-	StampDuty  Money        `json:"stamp_duty"`
-	GrossTotal Money        `json:"gross_total"`
+	NetTotal   Money `json:"net_total"`
+	TaxTotal   Money `json:"tax_total"`
+	StampDuty  Money `json:"stamp_duty"`
+	GrossTotal Money `json:"gross_total"`
 	// AmountPayable defaults to GrossTotal. Family issuers that carry
 	// WithholdingTax (sales / payment) subtract the total withheld here so the
 	// final figure is "amount the customer actually pays" — feeds QR field P
@@ -32,9 +32,7 @@ type DocumentCore struct {
 	IssuedBy     User           `json:"issued_by"`
 	Lines        []DocumentLine `json:"lines"`
 	Totals       Totals         `json:"totals,omitzero"`
-	// PaymentTerms is the due date that the SAF-T projector renders as
-	// DocumentTotals.Settlement.PaymentTerms. Must be >= Date when set.
-	PaymentTerms *time.Time `json:"payment_terms,omitempty"`
+	PaymentTerms *time.Time     `json:"payment_terms,omitempty"`
 }
 
 type CommonDraftDocument struct {
@@ -105,7 +103,7 @@ func (d *CommonDraftDocument) CalculateTotals() {
 	var t Totals
 	bd := make(map[taxBreakdownKey]TaxBreakdownEntry)
 	for _, line := range d.Lines {
-		afterDiscount := applyDiscount(line.Discount, line.LineSubtotal())
+		afterDiscount := line.LineNetAmount()
 		// regras R-L: discount is applied to LineSubtotal, never to TaxBase.
 		// When TaxBase is set the line is a tax-only adjustment — UnitPrice is 0
 		// (enforced by DocumentLine.Validate) so afterDiscount is 0 anyway.

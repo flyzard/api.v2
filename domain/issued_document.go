@@ -5,12 +5,25 @@ import (
 	"slices"
 	"strings"
 	"time"
+
+	_ "time/tzdata"
 )
 
 // DocumentStatus is the SAF-T DocumentStatus value, shared by all four document families.
-// The full set of codes is declared once here; each family accepts only the subset
-// that the SAF-T schema allows for its DocumentStatus element (see allowedStatuses).
 type DocumentStatus string
+
+const MaxLenCancellationReason = 100
+
+// lisbonLocation is the canonical clock for AT certification.
+var lisbonLocation = mustLisbonLocation()
+
+func mustLisbonLocation() *time.Location {
+	loc, err := time.LoadLocation("Europe/Lisbon")
+	if err != nil {
+		panic("domain: cannot load Europe/Lisbon timezone (tzdata missing?): " + err.Error())
+	}
+	return loc
+}
 
 const (
 	StatusNormal     DocumentStatus = "N" // all families
@@ -144,10 +157,6 @@ type IssuedDocument struct {
 	BilledByInvoice *DocNumber `json:"billed_by_invoice,omitempty"`
 
 	DocumentCore
-	// QRPayload is the frozen-at-issuance QR-code string (F-QR-3). The QR
-	// generator (Tier-3 module) populates this once; subsequent reprints read
-	// it verbatim. Status changes (e.g. Cancel) MUST NOT mutate this field —
-	// the QR encodes the original issuance state.
 	QRPayload string `json:"qr_payload,omitempty"`
 }
 

@@ -6,10 +6,9 @@ import (
 )
 
 // ATCUD is the Unique Document Code (Código Único do Documento) mandated by Portaria 195/2020.
-// Format: "<ValidationCode>-<Seq>". Max length 100 chars per XSD.
-// Issuance gates require the series to be registered (CanIssue), so a fallback
-// to "0" for unregistered series is unreachable and was removed (AUDIT 3.14).
 type ATCUD string
+
+const MaxLenATCUD = 100
 
 func NewATCUD(series Series, seq int) (ATCUD, error) {
 	if seq < 1 {
@@ -36,9 +35,6 @@ func (a ATCUD) Validate() error {
 }
 
 // ValidateATCode checks the AT validation code returned by the WDT webservice.
-// TODO(atcud-alphabet): the strict alphabet is [CONFIRMAR]; current rule is
-// permissive (length >= 8, uppercase [A-Z0-9]) per FIX_PLAN.md §0.5 fallback.
-// Tighten to AT's documented alphabet once the authoritative reference is located.
 func ValidateATCode(code string) error {
 	if len(code) < 8 {
 		return fmt.Errorf("at code length must be >= 8, got %d (%q)", len(code), code)

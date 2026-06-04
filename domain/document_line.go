@@ -6,8 +6,12 @@ import (
 	"time"
 )
 
+const (
+	MaxLenReference     = 60
+	MaxLenOriginatingON = 60
+)
+
 // OrderReference points to a customer order or other originating document.
-// Both fields are optional in XSD; if used, OriginatingON is ≤60 chars.
 type OrderReference struct {
 	OriginatingON string     `json:"originating_on,omitempty"`
 	OrderDate     *time.Time `json:"order_date,omitempty"`
@@ -21,8 +25,6 @@ func (o OrderReference) Validate() error {
 }
 
 // DocReference links a credit/debit note line to the invoice line it adjusts.
-// AT business rules require References on every NC/ND line; the doc-level enforcement
-// is applied when the parent document is issued (Phase 5).
 type DocReference struct {
 	Reference string `json:"reference,omitempty"`
 	Reason    string `json:"reason,omitempty"`
@@ -45,11 +47,6 @@ type DocumentLine struct {
 	ID              int              `json:"id"`
 	LineNumber      int              `json:"line_number"`
 	Product         Product          `json:"product"`
-	// Description is the SAF-T Line.Description — frozen at line construction
-	// from Product.ProductDescription (Policy B). The Validate gate below requires
-	// it to still match the embedded product at issue time, so any out-of-band
-	// mutation to either is caught (F-SAFT-9).
-	Description     string           `json:"description"`
 	Quantity        Quantity         `json:"quantity"`
 	UnitPrice       Money            `json:"unit_price"`
 	TaxBase         *Money           `json:"tax_base,omitempty"`
@@ -61,25 +58,21 @@ type DocumentLine struct {
 	Tax             LineTax          `json:"tax"`
 }
 
-
 func (l DocumentLine) LineSubtotal() Money {
 	return l.UnitPrice.Mul(l.Quantity)
 }
 
 // LineNetAmount is the post-discount, pre-tax line amount — the value the
-// SAF-T projector emits as DebitAmount or CreditAmount per family rules.
 func (l DocumentLine) LineNetAmount() Money {
 	return applyDiscount(l.Discount, l.LineSubtotal())
 }
 
-// LineDiscountAmount is the absolute discount on this line — projects to
-// SAF-T Line/SettlementAmount when non-zero (AT cert §5.7).
+// LineDiscountAmount is the absolute discount on this line
 func (l DocumentLine) LineDiscountAmount() Money {
 	return l.LineSubtotal() - l.LineNetAmount()
 }
 
-// EffectiveUnitPrice is the post-discount per-unit price so the SAF-T wire
-// invariant Q × UnitPrice = CreditAmount holds (AT cert §5.7).
+// EffectiveUnitPrice is the post-discount per-unit price
 func (l DocumentLine) EffectiveUnitPrice() Money {
 	if l.Quantity == 0 {
 		return 0
@@ -88,8 +81,6 @@ func (l DocumentLine) EffectiveUnitPrice() Money {
 }
 
 // LineTotal = (unit × qty − discount) + tax(after-discount base).
-// Tax base is post-discount per PT VAT rules; stamp duty Amount is fixed regardless of base.
-// A nil Tax (non-valued transport line) contributes zero tax.
 func (l DocumentLine) LineTotal() Money {
 	afterDiscount := applyDiscount(l.Discount, l.LineSubtotal())
 	if l.Tax == nil {
@@ -111,11 +102,9 @@ func (l DocumentLine) Validate() error {
 	if l.TaxPointDate.IsZero() {
 		return fmt.Errorf("tax point date is required")
 	}
-	if n := len(l.Description); n < 1 || n > 200 {
-		return fmt.Errorf("description length must be 1..200, got %d", n)
-	}
-	if l.Description != l.Product.ProductDescription {
-		return fmt.Errorf("line description %q drifts from product description %q (F-SAFT-9)", l.Description, l.Product.ProductDescription)
+
+	if n := len(l.Product.ProductDescription); n < 1 || n > 200 {
+		return fmt.Errorf("product description length must be 1..200, got %d", n)
 	}
 	// XSD assertion: TaxBase and UnitPrice are mutually exclusive when nonzero.
 	if l.TaxBase != nil {

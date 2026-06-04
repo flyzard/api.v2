@@ -59,7 +59,6 @@ func minimalSalesInvoice() domain.SalesInvoice {
 				Lines: []domain.DocumentLine{{
 					LineNumber:   1,
 					Product:      prod,
-					Description:  prod.ProductDescription,
 					Quantity:     must(domain.NewQuantity(2)),
 					UnitPrice:    must(domain.NewMoney(50.00)),
 					TaxPointDate: date,
@@ -179,7 +178,6 @@ func TestExport_ProductDescriptionDrift(t *testing.T) {
 	inv2 := minimalSalesInvoice()
 	// Drift only on the product description; same ProductCode "P-NOR".
 	inv2.Lines[0].Product.ProductDescription = "Auriculares Bluetooth PRO"
-	inv2.Lines[0].Description = inv2.Lines[0].Product.ProductDescription
 	// Different doc number so the dedup sort key differs.
 	inv2.Number = must(domain.NewDocNumber(domain.FT, "FT2026", 2))
 

@@ -9,9 +9,12 @@ import (
 )
 
 // CustomerTaxID holds a tax identifier as a string (XSD: max 30 chars).
-// PT-NIF semantics are enforced only when the customer's billing-address country is PT.
-// Foreign customers keep their native tax id without checksum constraints.
 type CustomerTaxID string
+
+const (
+	MaxLenCustomerTaxID = 30
+	MaxLenAccountID     = 30
+)
 
 // validateCustomerTaxIDShape trims and enforces non-empty + ≤MaxLenCustomerTaxID.
 // Returns the trimmed value so callers don't redo the work.
@@ -43,8 +46,6 @@ func (c *CustomerTaxID) UnmarshalJSON(data []byte) error {
 }
 
 // ValidateCustomerTaxID applies country-aware rules:
-//   - PT customers: must be a valid NIF (9-digit checksum + prefix).
-//   - Non-PT customers: any 1..MaxLenCustomerTaxID char string.
 func ValidateCustomerTaxID(id CustomerTaxID, country Country) error {
 	s, err := validateCustomerTaxIDShape(string(id))
 	if err != nil {
@@ -72,13 +73,9 @@ type Customer struct {
 }
 
 // AnonymousCustomerID is the reserved UUID marker for the "Consumidor final"
-// pseudo-customer used on FS invoices below the AT retail threshold.
-// Anonymous customers bypass billing-address validation.
 var AnonymousCustomerID = uuid.MustParse("00000000-0000-0000-0000-FFFFFFFFFFFF")
 
 // NewAnonymousCustomer builds the "Consumidor final" Customer used by
-// retail FS invoices below the AT limit. NIF 999999990 is the AT-reserved
-// final-consumer identifier (passes the NIF checksum coincidentally).
 func NewAnonymousCustomer() Customer {
 	return Customer{
 		CustomerID:    AnonymousCustomerID,

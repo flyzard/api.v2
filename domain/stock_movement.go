@@ -77,7 +77,7 @@ func (d *DraftStockMovement) Validate() error {
 	return nil
 }
 
-func IssueStockMovement(draft *DraftStockMovement, series *Series, signer Signer, sourceID string, now time.Time, opts IssueOptions) (StockMovement, error) {
+func IssueStockMovement(draft *DraftStockMovement, series *Series, signer Signer, sourceID string, now time.Time, opts IssueOptions, qr QRConfig) (StockMovement, error) {
 	if err := draft.Validate(); err != nil {
 		return StockMovement{}, fmt.Errorf("draft: %w", err)
 	}
@@ -96,6 +96,7 @@ func IssueStockMovement(draft *DraftStockMovement, series *Series, signer Signer
 	if draft.ThirdParties {
 		issued.Status = StatusThirdParty
 	}
+	issued.QRPayload = buildQRPayload(&issued, qr)
 	return StockMovement{
 		IssuedDocument:      issued,
 		StockMovementFields: draft.StockMovementFields,

@@ -75,7 +75,7 @@ func buildLine(l domain.DocumentLine, side lineSide) xmlLine {
 		UnitPrice:          saftMoneyLine(l.EffectiveUnitPrice()),
 		TaxPointDate:       fmtDate(l.TaxPointDate),
 		References:         buildDocRefs(l.References),
-		Description:        l.Description,
+		Description:        l.Product.ProductDescription,
 	}
 	if side == sideDebit {
 		out.DebitAmount = &net

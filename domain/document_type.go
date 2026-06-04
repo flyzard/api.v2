@@ -30,9 +30,7 @@ const (
 	RG DocumentType = "RG"
 )
 
-// docFamily groups DocumentTypes by SAF-T family. Unexported because callers
-// query the per-doctype Is* helpers; the family classifier is an internal
-// implementation detail.
+// docFamily groups DocumentTypes by SAF-T family.
 type docFamily string
 
 const (
@@ -42,9 +40,7 @@ const (
 	familyReceipt   docFamily = "receipt"
 )
 
-// docTypeRules captures the SAF-T family classification plus per-doctype business
-// rules that the validator enforces uniformly. Adding a new doctype = one row;
-// adding a new cross-cutting rule = one column.
+// docTypeRules captures the SAF-T family classification plus per-doctype business rules that the validator enforces uniformly.
 type docTypeRules struct {
 	Family      docFamily
 	RequiresRef bool // every line must carry a DocReference (AT rule for NC/ND)
@@ -75,11 +71,10 @@ var documentTypes = map[DocumentType]docTypeRules{
 	RG: {Family: familyReceipt},
 }
 
-func (dt DocumentType) IsValid() bool     { _, ok := documentTypes[dt]; return ok }
-func (dt DocumentType) IsSales() bool     { return documentTypes[dt].Family == familySales }
+func (dt DocumentType) IsValid() bool { _, ok := documentTypes[dt]; return ok }
+func (dt DocumentType) IsSales() bool { return documentTypes[dt].Family == familySales }
 
-// IsFactura narrows IsSales() to the fatura subset (FT/FS/FR) that CIVA
-// Art. 36.º §2 timing rules apply to. Notes (NC/ND) are excluded.
+// IsFactura narrows IsSales() to the fatura subset (FT/FS/FR)
 func (dt DocumentType) IsFactura() bool {
 	switch dt {
 	case FT, FS, FR:

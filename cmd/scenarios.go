@@ -14,6 +14,7 @@ type ctx struct {
 	signer domain.Signer
 	clock  *monotonicClock
 	store  *memoryStore
+	qr     domain.QRConfig
 }
 
 // ─── tax + line builders ────────────────────────────────────────────────────
@@ -35,12 +36,11 @@ func taxEXEMPT(code domain.Exemption, reason string) domain.LineTax {
 }
 
 // newLine wires the boilerplate of Product snapshot + TaxPointDate so each
-// scenario only declares what varies. Description is frozen from the product
-// per F-SAFT-9; AddLine assigns LineNumber on insertion.
+// scenario only declares what varies. The line description is derived from
+// the product per F-SAFT-9; AddLine assigns LineNumber on insertion.
 func newLine(p domain.Product, qty float64, unit float64, tax domain.LineTax, when time.Time) domain.DocumentLine {
 	return domain.DocumentLine{
 		Product:      p,
-		Description:  p.ProductDescription,
 		Quantity:     must(domain.NewQuantity(qty)),
 		UnitPrice:    must(domain.NewMoney(unit)),
 		TaxPointDate: when,
@@ -58,7 +58,7 @@ func addLines(d *domain.CommonDraftDocument, lines ...domain.DocumentLine) {
 // ─── issue + record helpers ─────────────────────────────────────────────────
 
 func (c *ctx) issueSales(draft *domain.DraftSalesInvoice, opts domain.IssueOptions) domain.SalesInvoice {
-	doc, err := domain.IssueSalesInvoice(draft, c.f.Series[draft.DocumentType], c.signer, c.f.IssuerUser.Email, c.clock.Tick(), opts)
+	doc, err := domain.IssueSalesInvoice(draft, c.f.Series[draft.DocumentType], c.signer, c.f.IssuerUser.Email, c.clock.Tick(), opts, c.qr)
 	if err != nil {
 		log.Fatalf("issue sales %s: %v", draft.DocumentType, err)
 	}
@@ -67,7 +67,7 @@ func (c *ctx) issueSales(draft *domain.DraftSalesInvoice, opts domain.IssueOptio
 }
 
 func (c *ctx) issueStock(draft *domain.DraftStockMovement, opts domain.IssueOptions) domain.StockMovement {
-	doc, err := domain.IssueStockMovement(draft, c.f.Series[draft.DocumentType], c.signer, c.f.IssuerUser.Email, c.clock.Tick(), opts)
+	doc, err := domain.IssueStockMovement(draft, c.f.Series[draft.DocumentType], c.signer, c.f.IssuerUser.Email, c.clock.Tick(), opts, c.qr)
 	if err != nil {
 		log.Fatalf("issue stock %s: %v", draft.DocumentType, err)
 	}
@@ -76,7 +76,7 @@ func (c *ctx) issueStock(draft *domain.DraftStockMovement, opts domain.IssueOpti
 }
 
 func (c *ctx) issueWork(draft *domain.DraftWorkDocument, opts domain.IssueOptions) domain.WorkDocument {
-	doc, err := domain.IssueWorkDocument(draft, c.f.Series[draft.DocumentType], c.signer, c.f.IssuerUser.Email, c.clock.Tick(), opts)
+	doc, err := domain.IssueWorkDocument(draft, c.f.Series[draft.DocumentType], c.signer, c.f.IssuerUser.Email, c.clock.Tick(), opts, c.qr)
 	if err != nil {
 		log.Fatalf("issue work %s: %v", draft.DocumentType, err)
 	}

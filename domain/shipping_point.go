@@ -5,6 +5,12 @@ import (
 	"time"
 )
 
+const (
+	MaxLenWarehouseID = 50
+	MaxLenLocationID  = 30
+	MaxLenDeliveryID  = 200
+)
+
 // ShippingPoint is the SAF-T ShippingPointStructure used by ShipTo / ShipFrom on
 // SalesInvoice (transport-relevant invoices) and StockMovement documents.
 type ShippingPoint struct {

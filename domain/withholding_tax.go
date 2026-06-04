@@ -10,6 +10,8 @@ const (
 	WithholdingIRS WithholdingType = "IRS"
 	WithholdingIRC WithholdingType = "IRC"
 	WithholdingIS  WithholdingType = "IS"
+
+	MaxLenWithholdingDescription = 60
 )
 
 func (t WithholdingType) IsValid() bool {

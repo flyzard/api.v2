@@ -171,7 +171,7 @@ func (d *DraftSalesInvoice) Validate() error {
 	return nil
 }
 
-func IssueSalesInvoice(draft *DraftSalesInvoice, series *Series, signer Signer, sourceID string, now time.Time, opts IssueOptions) (SalesInvoice, error) {
+func IssueSalesInvoice(draft *DraftSalesInvoice, series *Series, signer Signer, sourceID string, now time.Time, opts IssueOptions, qr QRConfig) (SalesInvoice, error) {
 	if err := draft.Validate(); err != nil {
 		return SalesInvoice{}, fmt.Errorf("draft: %w", err)
 	}
@@ -218,8 +218,24 @@ func IssueSalesInvoice(draft *DraftSalesInvoice, series *Series, signer Signer, 
 	if len(draft.WithholdingTax) > 0 {
 		issued.Totals.applyWithholding(draft.WithholdingTax)
 	}
+	issued.QRPayload = buildQRPayload(&issued, qr)
 	return SalesInvoice{
 		IssuedDocument:     issued,
 		SalesInvoiceFields: draft.SalesInvoiceFields,
 	}, nil
+}
+
+func IsRetailActivity(eacCode string) bool {
+	if len(eacCode) != 5 {
+		return false
+	}
+	if eacCode[:2] == "47" {
+		return true
+	}
+	// CAE-Rev.3 codes that count as motor-vehicle retail activity.
+	switch eacCode {
+	case "45110", "45190", "45320", "45401", "45402":
+		return true
+	}
+	return false
 }

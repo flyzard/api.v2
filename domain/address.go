@@ -7,6 +7,12 @@ import (
 
 type Country string
 
+const (
+	MaxLenAddressDetail = 100
+	MaxLenCity          = 50
+	MaxLenPostalCode    = 20
+)
+
 var validCountries = map[Country]struct{}{
 	"AD": {}, "AE": {}, "AF": {}, "AG": {}, "AI": {}, "AL": {}, "AM": {}, "AO": {},
 	"AQ": {}, "AR": {}, "AS": {}, "AT": {}, "AU": {}, "AW": {}, "AX": {}, "AZ": {},

@@ -10,6 +10,11 @@ import (
 // and satisfies the Signer interface. Max length 172 chars per XSD.
 type Hash string
 
+const (
+	MaxLenHash        = 172
+	MaxLenHashControl = 70
+)
+
 func (h Hash) Validate() error {
 	if h == "" {
 		return fmt.Errorf("hash is required")
@@ -21,7 +26,6 @@ func (h Hash) Validate() error {
 }
 
 // HashControl identifies the signing-key version and any manual/recovery prefix.
-// XSD pattern: digits, digits.digits, or digits-AA M/D <docnum>. See SAF-T PT 1.04_01.
 var hashControlPattern = regexp.MustCompile(
 	`^([0-9]+|[0-9]+\.[0-9]+|[0-9]+-[A-Z]{2}(M )([^/^ ]+/[0-9]+)|[0-9]+-[A-Z]{2}(D )([^ ]+ [^/^ ]+/[0-9]+))$`,
 )

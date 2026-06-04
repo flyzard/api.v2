@@ -14,9 +14,9 @@ import "time"
 // recovery sub-types (manual paper vs backup mirror) are distinguished at the
 // signer / SourceID layer when production needs that audit-trail split — the
 // domain treats them identically because both produce the same canonical state.
-func IntegrateRecoveredDocument(draft *DraftSalesInvoice, series *Series, signer Signer, sourceID string, now time.Time) (SalesInvoice, error) {
+func IntegrateRecoveredDocument(draft *DraftSalesInvoice, series *Series, signer Signer, sourceID string, now time.Time, qr QRConfig) (SalesInvoice, error) {
 	return IssueSalesInvoice(draft, series, signer, sourceID, now, IssueOptions{
 		SourceBilling: SourceBillingManual,
 		Recovery:      true,
-	})
+	}, qr)
 }

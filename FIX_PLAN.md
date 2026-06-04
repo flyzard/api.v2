@@ -647,11 +647,12 @@ Exemption-codes versioning is not addressed in this plan. Tracked in
 ### P2.26 — Frozen QR payload at issuance (F-NEW-10)
 - Add `QRPayload string` to `IssuedDocument`. Compute at issue time
   using the issuance-time status. Reprint reads this verbatim.
-- Domain-only step lands here; QR-string composition logic lives in
-  the QR generator module (Tier 3), but the field reservation lands
-  now so future reprint reads from `IssuedDocument` directly.
-- **Test:** `TestIssue_StoresQRPayload`,
-  `TestCancel_DoesNotMutateQRPayload`.
+- DONE: the QR-string composition is a pure domain function
+  (`domain/qr_builder.go` `buildQRPayload`), called at the tail of each
+  family issuer. Only the QR IMAGE rasterization (version >= 9, ECC M)
+  remains a Tier-3 concern, consuming the frozen string at print time.
+- **Test:** `TestBuildQRPayload_Goldens` / `_Variants`,
+  `TestQRPayload_FrozenAcrossStatusChange` (the freeze invariant).
 - Closes F-QR-3.
 
 **Phase 2 exit criteria:**
@@ -789,9 +790,10 @@ have answers.
 6. **`QRPayload` migration** — field reservation lands in P2.26; persisted
    docs must back-fill (or be re-issued — but issuance is immutable, so
    back-fill is the only path).
-7. **Tier-3 QR module owner** — the field-by-field structure
-   (`AT_FEEDBACK.md` §2) is settled, but generator selection (library
-   vs hand-built) is open.
+7. **Tier-3 QR module owner** — the field-by-field structure is settled
+   and the payload-string composition is now done in domain
+   (`buildQRPayload`). What remains open for Tier-3 is only the QR IMAGE
+   encoder (version >= 9, ECC M): library vs hand-built.
 
 ---
 

@@ -1,0 +1,418 @@
+package at
+
+import (
+	"bytes"
+	"context"
+	"crypto/rsa"
+	"crypto/tls"
+	"fmt"
+	"io"
+	"log/slog"
+	"net/http"
+	"regexp"
+	"strconv"
+	"time"
+
+	"golang.org/x/time/rate"
+
+	"github.com/flyzard/invoicing.v2/internal/domain"
+)
+
+// Well-known SeriesWS endpoints per AT "Comunicação de Séries Documentais —
+// Aspetos Específicos" v1.2 (Dec 2022) §1.2.2.
+const (
+	TestSeriesURL       = "https://servicos.portaldasfinancas.gov.pt:722/SeriesWSService"
+	ProductionSeriesURL = "https://servicos.portaldasfinancas.gov.pt:422/SeriesWSService"
+)
+
+// Config holds the SeriesWS connection settings.
+type Config struct {
+	// SeriesURL is the full webservice URL: TestSeriesURL, ProductionSeriesURL,
+	// or an httptest server URL in tests.
+	SeriesURL string
+
+	// TransportURL / InvoiceURL are the full webservice URLs for transport
+	// docs (sgdtws) and invoice communication (fatcorews). Optional — only
+	// required by the respective operation.
+	TransportURL string
+	InvoiceURL   string
+
+	// Authentication (sub-user with the WSE operation permission).
+	TaxpayerNIF string
+	Username    string
+	Password    string
+
+	// SoftwareCertNum is the AT-issued certificate number stamped into
+	// registarSerie (numCertSWFatur). "0" if uncertified.
+	SoftwareCertNum string
+
+	// TaxEntity is the fatcorews establishment identifier: "Global" (default),
+	// "Sede", or an establishment code.
+	TaxEntity string
+
+	// ATPublicKey enables WS-Security credential encryption (required in
+	// production). When nil, the password travels in plain text — tests only.
+	ATPublicKey *rsa.PublicKey
+
+	// Certificate is the client certificate for mutual TLS (optional).
+	Certificate tls.Certificate
+
+	// Timeout is the per-HTTP-request timeout (default 30s).
+	Timeout time.Duration
+	// OperationTimeout caps a whole operation including retries (default 30s).
+	// A caller context deadline takes precedence.
+	OperationTimeout time.Duration
+
+	// Retry tunes the transient-error backoff. Zero values use defaults
+	// (3 attempts, 500ms initial, 10s max).
+	Retry RetrySettings
+
+	// RateLimit / RateLimitBurst throttle outbound calls to stay inside AT's
+	// per-NIF limits (~5-10 req/s). Defaults: 5 req/s, burst 10.
+	RateLimit      float64
+	RateLimitBurst int
+
+	Logger    *slog.Logger // nil → slog.Default()
+	LogBodies bool         // log SOAP request/response XML (passwords masked)
+}
+
+// Client talks to the AT SeriesWS over SOAP. Implements SeriesClient.
+type Client struct {
+	config     Config
+	httpClient *http.Client
+	logger     *slog.Logger
+	limiter    *rate.Limiter
+	certNum    int // parsed Config.SoftwareCertNum
+}
+
+// passwordMaskRe masks WS-Security passwords in SOAP XML for logging.
+var passwordMaskRe = regexp.MustCompile(`(<wsse:Password>)[^<]*(</wsse:Password>)`)
+
+// NewClient validates the config and builds a SeriesWS client.
+func NewClient(config Config) (*Client, error) {
+	if config.TaxpayerNIF == "" {
+		return nil, fmt.Errorf("at.Config: TaxpayerNIF required")
+	}
+	if config.Username == "" {
+		return nil, fmt.Errorf("at.Config: Username required")
+	}
+	if config.Password == "" {
+		return nil, fmt.Errorf("at.Config: Password required")
+	}
+	if config.SeriesURL == "" {
+		return nil, fmt.Errorf("at.Config: SeriesURL required (TestSeriesURL or ProductionSeriesURL)")
+	}
+	// numCertSWFatur is xsd:integer with totalDigits=4 — an empty or
+	// non-numeric value would only fail at AT's schema validator.
+	if config.SoftwareCertNum == "" {
+		config.SoftwareCertNum = "0"
+	}
+	certNum, err := strconv.Atoi(config.SoftwareCertNum)
+	if err != nil || certNum < 0 || certNum > 9999 {
+		return nil, fmt.Errorf("at.Config: SoftwareCertNum must be 0-9999, got %q", config.SoftwareCertNum)
+	}
+	if config.TaxEntity == "" {
+		config.TaxEntity = "Global"
+	}
+	rateLimit := config.RateLimit
+	if rateLimit <= 0 {
+		rateLimit = 5
+	}
+	burst := config.RateLimitBurst
+	if burst <= 0 {
+		burst = 10
+	}
+
+	timeout := config.Timeout
+	if timeout == 0 {
+		timeout = 30 * time.Second
+	}
+	logger := config.Logger
+	if logger == nil {
+		logger = slog.Default()
+	}
+
+	return &Client{
+		config: config,
+		httpClient: &http.Client{
+			Transport: &http.Transport{
+				TLSClientConfig: &tls.Config{
+					Certificates: []tls.Certificate{config.Certificate},
+					MinVersion:   tls.VersionTLS12,
+				},
+			},
+			Timeout: timeout,
+		},
+		logger:  logger,
+		limiter: rate.NewLimiter(rate.Limit(rateLimit), burst),
+		certNum: certNum,
+	}, nil
+}
+
+// ensureDeadline applies OperationTimeout if the caller's context has no deadline.
+func (c *Client) ensureDeadline(ctx context.Context) (context.Context, context.CancelFunc) {
+	if _, ok := ctx.Deadline(); ok {
+		return ctx, func() {}
+	}
+	timeout := c.config.OperationTimeout
+	if timeout <= 0 {
+		timeout = defaultOpTimeout
+	}
+	return context.WithTimeout(ctx, timeout)
+}
+
+// prepareCredentials builds soapCredentials, encrypting if ATPublicKey is set.
+// Called inside each *Once method so each retry gets a fresh AES key + timestamp.
+func (c *Client) prepareCredentials() (soapCredentials, error) {
+	creds := soapCredentials{
+		NIF:             c.config.TaxpayerNIF,
+		Username:        c.config.Username,
+		TaxEntity:       c.config.TaxEntity,
+		SoftwareCertNum: c.certNum,
+	}
+	if c.config.ATPublicKey != nil {
+		encPass, nonce, encCreated, err := EncryptATCredentials(
+			c.config.Password, time.Now(), c.config.ATPublicKey,
+		)
+		if err != nil {
+			return soapCredentials{}, fmt.Errorf("encrypting AT credentials: %w", err)
+		}
+		creds.Password = encPass
+		creds.Nonce = nonce
+		creds.Created = encCreated
+	} else {
+		creds.Password = c.config.Password
+	}
+	return creds, nil
+}
+
+// sendSOAPRequest posts a SOAP envelope to the given URL and returns the body.
+func (c *Client) sendSOAPRequest(ctx context.Context, operation, url string, envelope []byte) ([]byte, error) {
+	// Proactive throttle to stay within AT per-NIF limits.
+	if err := c.limiter.Wait(ctx); err != nil {
+		return nil, fmt.Errorf("AT rate limiter: %w", err)
+	}
+	start := time.Now()
+
+	if c.config.LogBodies {
+		masked := passwordMaskRe.ReplaceAllString(string(envelope), "${1}***${2}")
+		c.logger.DebugContext(ctx, "AT SOAP request",
+			slog.String("operation", operation), slog.String("body", masked))
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(envelope))
+	if err != nil {
+		return nil, fmt.Errorf("creating request: %w", err)
+	}
+	req.Header.Set("Content-Type", "text/xml; charset=utf-8")
+	req.Header.Set("SOAPAction", "")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		c.logger.ErrorContext(ctx, "AT SOAP connection failed",
+			slog.String("operation", operation),
+			slog.Duration("duration", time.Since(start)),
+			slog.String("error", err.Error()))
+		return nil, Error{Code: "CONNECTION", Message: fmt.Sprintf("connecting to AT: %v", err)}
+	}
+	defer resp.Body.Close() //nolint:errcheck // close error non-actionable
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("reading response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		c.logger.ErrorContext(ctx, "AT SOAP HTTP error",
+			slog.String("operation", operation),
+			slog.Duration("duration", time.Since(start)),
+			slog.Int("status", resp.StatusCode))
+		return nil, Error{
+			Code:    fmt.Sprintf("HTTP_%d", resp.StatusCode),
+			Message: fmt.Sprintf("AT returned status %d: %s", resp.StatusCode, string(body)),
+		}
+	}
+
+	if c.config.LogBodies {
+		c.logger.DebugContext(ctx, "AT SOAP response",
+			slog.String("operation", operation), slog.String("body", string(body)))
+	}
+	c.logger.InfoContext(ctx, "AT SOAP request completed",
+		slog.String("operation", operation),
+		slog.Duration("duration", time.Since(start)),
+		slog.Int("status", resp.StatusCode))
+
+	return body, nil
+}
+
+// operResult converts an AT 3xxx+ operation code into an Error, logging it.
+func (c *Client) operResult(ctx context.Context, operation string, r atOperationResult) error {
+	if !r.IsError() {
+		return nil
+	}
+	atErr := Error{Code: strconv.Itoa(r.CodResultOper), Message: r.MsgResultOper}
+	c.logger.WarnContext(ctx, "AT returned error",
+		slog.String("operation", operation),
+		slog.String("code", atErr.Code),
+		slog.String("message", atErr.Message))
+	return atErr
+}
+
+// RegisterSeries registers a document series with AT (registarSerie).
+func (c *Client) RegisterSeries(ctx context.Context, req SeriesRegistration) (*SeriesRegistrationResult, error) {
+	ctx, cancel := c.ensureDeadline(ctx)
+	defer cancel()
+	return retryable(ctx, c.logger, c.config.Retry, "RegisterSeries", func() (*SeriesRegistrationResult, error) {
+		return c.registerSeriesOnce(ctx, req)
+	})
+}
+
+func (c *Client) registerSeriesOnce(ctx context.Context, req SeriesRegistration) (*SeriesRegistrationResult, error) {
+	creds, err := c.prepareCredentials()
+	if err != nil {
+		return nil, err
+	}
+	envelope, err := buildSeriesRegistrationEnvelope(creds, req, c.config.SoftwareCertNum)
+	if err != nil {
+		return nil, fmt.Errorf("building SOAP envelope: %w", err)
+	}
+	respBody, err := c.sendSOAPRequest(ctx, "RegisterSeries", c.config.SeriesURL, envelope)
+	if err != nil {
+		return nil, err
+	}
+
+	var resp seriesRegistrationResponse
+	if err := parseSOAPResponse(respBody, &resp); err != nil {
+		return nil, err
+	}
+	if err := c.operResult(ctx, "RegisterSeries", resp.Resp.InfoResultOper); err != nil {
+		return nil, err
+	}
+	if resp.Resp.InfoSerie == nil {
+		return nil, Error{Code: "EMPTY_RESPONSE", Message: "AT returned no infoSerie for registarSerie"}
+	}
+
+	info := resp.Resp.InfoSerie
+	regDate, err := time.Parse("2006-01-02", info.DataRegisto)
+	if err != nil {
+		c.logger.WarnContext(ctx, "AT dataRegisto unparseable; falling back to local time",
+			slog.String("dataRegisto", info.DataRegisto))
+		regDate = time.Now()
+	}
+	return &SeriesRegistrationResult{
+		ValidationCode:   info.CodValidacaoSerie,
+		RegistrationDate: regDate,
+		Status:           statusFromEstado(info.Estado),
+	}, nil
+}
+
+// FinalizeSeries closes a series with AT (finalizarSerie).
+func (c *Client) FinalizeSeries(ctx context.Context, req SeriesFinalization) error {
+	ctx, cancel := c.ensureDeadline(ctx)
+	defer cancel()
+	return retryableNoResult(ctx, c.logger, c.config.Retry, "FinalizeSeries", func() error {
+		return c.finalizeSeriesOnce(ctx, req)
+	})
+}
+
+func (c *Client) finalizeSeriesOnce(ctx context.Context, req SeriesFinalization) error {
+	creds, err := c.prepareCredentials()
+	if err != nil {
+		return err
+	}
+	envelope, err := buildSeriesFinalizationEnvelope(creds, req)
+	if err != nil {
+		return fmt.Errorf("building SOAP envelope: %w", err)
+	}
+	respBody, err := c.sendSOAPRequest(ctx, "FinalizeSeries", c.config.SeriesURL, envelope)
+	if err != nil {
+		return err
+	}
+
+	var resp seriesFinalizationResponse
+	if err := parseSOAPResponse(respBody, &resp); err != nil {
+		return err
+	}
+	return c.operResult(ctx, "FinalizeSeries", resp.Resp.InfoResultOper)
+}
+
+// CancelSeries voids a series registration with AT (anularSerie). Only legal
+// for series that never issued a document.
+func (c *Client) CancelSeries(ctx context.Context, req SeriesCancellation) error {
+	ctx, cancel := c.ensureDeadline(ctx)
+	defer cancel()
+	return retryableNoResult(ctx, c.logger, c.config.Retry, "CancelSeries", func() error {
+		return c.cancelSeriesOnce(ctx, req)
+	})
+}
+
+func (c *Client) cancelSeriesOnce(ctx context.Context, req SeriesCancellation) error {
+	creds, err := c.prepareCredentials()
+	if err != nil {
+		return err
+	}
+	envelope, err := buildSeriesCancellationEnvelope(creds, req)
+	if err != nil {
+		return fmt.Errorf("building SOAP envelope: %w", err)
+	}
+	respBody, err := c.sendSOAPRequest(ctx, "CancelSeries", c.config.SeriesURL, envelope)
+	if err != nil {
+		return err
+	}
+
+	var resp seriesCancellationResponse
+	if err := parseSOAPResponse(respBody, &resp); err != nil {
+		return err
+	}
+	return c.operResult(ctx, "CancelSeries", resp.Resp.InfoResultOper)
+}
+
+// GetSeriesStatus queries series state from AT (consultarSeries).
+func (c *Client) GetSeriesStatus(ctx context.Context, seriesID string, docType domain.DocumentType) (*SeriesStatus, error) {
+	ctx, cancel := c.ensureDeadline(ctx)
+	defer cancel()
+	return retryable(ctx, c.logger, c.config.Retry, "GetSeriesStatus", func() (*SeriesStatus, error) {
+		return c.getSeriesStatusOnce(ctx, seriesID, docType)
+	})
+}
+
+func (c *Client) getSeriesStatusOnce(ctx context.Context, seriesID string, docType domain.DocumentType) (*SeriesStatus, error) {
+	creds, err := c.prepareCredentials()
+	if err != nil {
+		return nil, err
+	}
+	envelope, err := buildSeriesStatusEnvelope(creds, seriesID, docType)
+	if err != nil {
+		return nil, fmt.Errorf("building SOAP envelope: %w", err)
+	}
+	respBody, err := c.sendSOAPRequest(ctx, "GetSeriesStatus", c.config.SeriesURL, envelope)
+	if err != nil {
+		return nil, err
+	}
+
+	var resp seriesStatusResponse
+	if err := parseSOAPResponse(respBody, &resp); err != nil {
+		return nil, err
+	}
+	if err := c.operResult(ctx, "GetSeriesStatus", resp.Resp.InfoResultOper); err != nil {
+		return nil, err
+	}
+	// consultarSeries can echo multiple infoSerie elements; pick the one
+	// matching the queried identifier rather than trusting position.
+	for _, info := range resp.Resp.InfoSerie {
+		if info.Serie != seriesID {
+			continue
+		}
+		return &SeriesStatus{
+			SeriesID:       info.Serie,
+			DocType:        domain.DocumentType(info.TipoDoc),
+			ValidationCode: info.CodValidacaoSerie,
+			Status:         statusFromEstado(info.Estado),
+			LastSeq:        info.SeqUltimoDocEmitido,
+		}, nil
+	}
+	return nil, Error{Code: "EMPTY_RESPONSE", Message: fmt.Sprintf("AT returned no infoSerie matching %q for consultarSeries", seriesID)}
+}
+
+// Compile-time interface check.
+var _ SeriesClient = (*Client)(nil)

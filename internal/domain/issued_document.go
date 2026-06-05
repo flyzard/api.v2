@@ -12,7 +12,9 @@ import (
 // DocumentStatus is the SAF-T DocumentStatus value, shared by all four document families.
 type DocumentStatus string
 
-const MaxLenCancellationReason = 100
+// MaxLenCancellationReason mirrors the XSD DocumentStatus Reason limit
+// (SAFPTtextTypeMandatoryMax50Car) so an accepted reason never fails export.
+const MaxLenCancellationReason = 50
 
 // lisbonLocation is the canonical clock for AT certification.
 var lisbonLocation = mustLisbonLocation()
@@ -144,7 +146,6 @@ type IssuedDocument struct {
 	SystemEntryDate time.Time      `json:"system_entry_date"`
 	SourceID        string         `json:"source_id"`
 	SourceBilling   SourceBilling  `json:"source_billing"`
-	Period          Period         `json:"period"`
 	Status          DocumentStatus `json:"status"`
 	StatusDate      time.Time      `json:"status_date"`
 	// Reason is the cancellation justification when Status == "A" (SAF-T DocumentStatus.Reason).
@@ -186,6 +187,13 @@ func validateIssueContext(series *Series, docType DocumentType, sourceID string,
 	if now.Before(refDate) {
 		return fmt.Errorf("system entry date %s precedes draft date %s", now, refDate)
 	}
+	// SAF-T entries are ordered by number; AT expects SystemEntryDate
+	// non-decreasing along that order. sysEntry is the server clock, so the
+	// guard applies to recovery issuance too.
+	if series.LastSystemDate != nil && now.Before(*series.LastSystemDate) {
+		return fmt.Errorf("%w: %s < %s", ErrSystemEntryRegression,
+			now.Format(time.RFC3339), series.LastSystemDate.Format(time.RFC3339))
+	}
 	if sourceID == "" {
 		return fmt.Errorf("source id is required")
 	}
@@ -199,24 +207,20 @@ func dateOnly(t time.Time) time.Time {
 	return time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, t.Location())
 }
 
-// nextDocIdentity derives the next sequence number and its DocNumber/ATCUD/Period
+// nextDocIdentity derives the next sequence number and its DocNumber/ATCUD
 // from the series state. Shared by issueCommon and IssuePayment so the
 // seq == LastNum+1 contract (see Series.AppendIssue) has a single source.
-func nextDocIdentity(series *Series, docType DocumentType, date time.Time) (int, DocNumber, ATCUD, Period, error) {
+func nextDocIdentity(series *Series, docType DocumentType) (int, DocNumber, ATCUD, error) {
 	seq := series.LastNum + 1
 	number, err := NewDocNumber(docType, series.ID, seq)
 	if err != nil {
-		return 0, DocNumber{}, "", 0, err
+		return 0, DocNumber{}, "", err
 	}
 	atcud, err := NewATCUD(*series, seq)
 	if err != nil {
-		return 0, DocNumber{}, "", 0, err
+		return 0, DocNumber{}, "", err
 	}
-	period, err := NewPeriod(int(date.Month()))
-	if err != nil {
-		return 0, DocNumber{}, "", 0, err
-	}
-	return seq, number, atcud, period, nil
+	return seq, number, atcud, nil
 }
 
 // issueCommon advances the series counter and produces a signed IssuedDocument.
@@ -240,7 +244,7 @@ func issueCommon(draft *CommonDraftDocument, series *Series, signer Signer, sour
 		}
 	}
 	// AT signs and exports in Europe/Lisbon wall time. Normalize both endpoints
-	// here so canonical hash, Period, and stored timestamps all share that clock.
+	// here so canonical hash and stored timestamps all share that clock.
 	date := draft.Date.In(lisbonLocation)
 	sysEntry := now.In(lisbonLocation)
 
@@ -263,7 +267,7 @@ func issueCommon(draft *CommonDraftDocument, series *Series, signer Signer, sour
 
 	draft.CalculateTotals()
 
-	seq, number, atcud, period, err := nextDocIdentity(series, draft.DocumentType, date)
+	seq, number, atcud, err := nextDocIdentity(series, draft.DocumentType)
 	if err != nil {
 		return IssuedDocument{}, err
 	}
@@ -297,7 +301,6 @@ func issueCommon(draft *CommonDraftDocument, series *Series, signer Signer, sour
 		SystemEntryDate: sysEntry,
 		SourceID:        sourceID,
 		SourceBilling:   sourceBilling,
-		Period:          period,
 		Status:          StatusNormal,
 		StatusDate:      sysEntry,
 		DocumentCore:    core,
@@ -326,7 +329,7 @@ func (d *IssuedDocument) Cancel(reason string, at time.Time) error {
 		// they're terminal states from the AT-cert perspective.
 		return fmt.Errorf("cannot cancel from status %q", d.Status)
 	}
-	if err := validateCancellation(reason, d.Date); err != nil {
+	if err := validateCancellation(reason, d.Date, at); err != nil {
 		return err
 	}
 	d.Status = StatusCancelled
@@ -337,13 +340,14 @@ func (d *IssuedDocument) Cancel(reason string, at time.Time) error {
 
 // validateCancellation enforces the shared cancellation rules: reason length
 // and the e-Fatura deadline anchored on the document's date (InvoiceDate /
-// TransactionDate).
-func validateCancellation(reason string, anchor time.Time) error {
+// TransactionDate). The deadline is checked against the caller-supplied
+// cancellation instant (at) — the same clock that stamps StatusDate.
+func validateCancellation(reason string, anchor, at time.Time) error {
 	if len(reason) > MaxLenCancellationReason {
 		return fmt.Errorf("cancellation reason exceeds %d chars", MaxLenCancellationReason)
 	}
 	deadline := cancellationDeadline(anchor)
-	if time.Now().After(deadline) {
+	if at.After(deadline) {
 		return fmt.Errorf("%w: %s", ErrCancellationDeadlinePassed, deadline.Format(time.RFC3339))
 	}
 	return nil

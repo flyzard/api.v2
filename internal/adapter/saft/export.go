@@ -29,20 +29,39 @@ type SoftwareIdentity struct {
 
 // Header holds the source values for AuditFile/Header; buildHeader projects
 // to wire format at marshal time so projected fields can't drift from source.
+//
+// TaxAccountingBasis defaults to "F" (Faturação — the tenant's own billing).
+// For self-billing, Portaria 302/2016 alínea g) prescribes a SEPARATE file per
+// supplier with basis "S": Header carries the supplier's data (Issuer = the
+// supplier), MasterFiles/Customer carries the issuing acquirer, and every
+// sales invoice has InvoiceStatus "S". Supplier rows inside an "F" file are
+// not how self-billing is represented.
 type Header struct {
-	Issuer        domain.Company
-	Software      SoftwareIdentity
-	Start, End    time.Time
-	CreatedAt     time.Time
-	HeaderComment string
+	Issuer             domain.Company
+	Software           SoftwareIdentity
+	Start, End         time.Time
+	CreatedAt          time.Time
+	HeaderComment      string
+	TaxAccountingBasis string // "" or "F" = Faturação; "S" = Autofaturação
+}
+
+// basis resolves the wire TaxAccountingBasis, restricted to the two file
+// kinds this library produces.
+func (h Header) basis() (string, error) {
+	switch h.TaxAccountingBasis {
+	case "", "F":
+		return "F", nil
+	case "S":
+		return "S", nil
+	}
+	return "", fmt.Errorf("unsupported TaxAccountingBasis %q (only \"F\" and \"S\")", h.TaxAccountingBasis)
 }
 
 // SAF-T PT constants per Portaria 195/2020 + 2025 updates.
 const (
-	auditFileVersion   = "1.04_01"
-	taxAccountingBasis = "F" // Faturação (billing-only)
-	taxEntity          = "Global"
-	currencyCodeEUR    = "EUR"
+	auditFileVersion = "1.04_01"
+	taxEntity        = "Global"
+	currencyCodeEUR  = "EUR"
 )
 
 // xmlAuditFile is the SAF-T root element. SourceDocuments is optional and
@@ -69,13 +88,17 @@ func Export(hdr Header,
 	work []domain.WorkDocument,
 	payments []domain.Payment,
 ) ([]byte, error) {
+	basis, err := hdr.basis()
+	if err != nil {
+		return nil, err
+	}
 	mf, err := buildMasterFiles(sales, stock, work, payments)
 	if err != nil {
 		return nil, fmt.Errorf("masterfiles: %w", err)
 	}
 	af := xmlAuditFile{
 		Xmlns:       saftNamespace,
-		Header:      buildHeader(hdr),
+		Header:      buildHeader(hdr, basis),
 		MasterFiles: mf,
 	}
 	if len(sales)+len(stock)+len(work)+len(payments) > 0 {

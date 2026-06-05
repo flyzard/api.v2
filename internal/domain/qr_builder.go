@@ -104,7 +104,7 @@ func buildQRPayload(d *IssuedDocument, cfg QRConfig) string {
 	if p := d.Totals.GrossTotal - d.Totals.AmountPayable; p != 0 {
 		add("P", p.Format2DP())
 	}
-	add("Q", qHash(d.Hash))
+	add("Q", d.Hash.FourChars())
 	add("R", cfg.CertificateNumber)
 	if s := sanitizeS(cfg.OtherInfo); s != "" {
 		add("S", s)
@@ -190,19 +190,6 @@ func nonSubjectBase(d *IssuedDocument) Money {
 		}
 	}
 	return sum
-}
-
-// qHash returns field Q: the hash characters at 1-based positions 1, 11, 21, 31.
-// NOT the first four characters. Bounds-guarded against short hashes.
-func qHash(h Hash) string {
-	s := string(h)
-	var b []byte
-	for _, pos := range []int{1, 11, 21, 31} {
-		if pos-1 < len(s) {
-			b = append(b, s[pos-1])
-		}
-	}
-	return string(b)
 }
 
 // sanitizeS strips the asterisk from the free-text S field — Portaria 195/2020

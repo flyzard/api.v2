@@ -28,14 +28,18 @@ type SalesInvoiceFields struct {
 // EAC, the customer is the AnonymousCustomer pseudo-entity, and every line
 // is goods (ProductType "P"). Any of those failing falls back to Default.
 //
-// Values are [CONFIRMAR] until legal confirms — DefaultFSLimits below carries
-// the §0.5 fallback (€1000 retail / €100 default).
+// Values confirmed against CIVA Art. 40.º n.º 1: a) €1000 for retail goods to
+// non-taxable persons, b) €100 otherwise; unchanged through 2026. Art. 53
+// (isento) issuers may issue FS with no ceiling (n.º 1 c, DL 35/2025, in force
+// 2025-07-01) — pass IssueOptions.FSLimits with unbounded values for those.
+// Note Art. 40 carries its own exemption-motive element (n.º 2 e), so exempt
+// lines are legal on an FS; no exempt-line restriction applies.
 type FSLimits struct {
 	Retail  Money
 	Default Money
 }
 
-// DefaultFSLimits is the §0.5 fallback applied when IssueOptions.FSLimits is nil.
+// DefaultFSLimits applies when IssueOptions.FSLimits is nil (Art. 40.º n.º 1 a/b).
 var DefaultFSLimits = FSLimits{
 	Retail:  Money(1000 * scale), // €1000
 	Default: Money(100 * scale),  // €100

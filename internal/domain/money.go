@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"strconv"
 )
 
 // Money is always EUR. For FX, see Currency.
@@ -172,3 +173,8 @@ func (m *Money) UnmarshalJSON(data []byte) error {
 }
 func (q Quantity) MarshalJSON() ([]byte, error)     { return json.Marshal(float64(q) / scale) }
 func (q *Quantity) UnmarshalJSON(data []byte) error { return unmarshalFloat(data, NewQuantity, q) }
+
+// String renders the quantity with its natural number of decimals ("2.5", "10").
+func (q Quantity) String() string {
+	return strconv.FormatFloat(float64(q)/scale, 'f', -1, 64)
+}

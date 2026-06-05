@@ -75,12 +75,16 @@ type Customer struct {
 // AnonymousCustomerID is the reserved UUID marker for the "Consumidor final"
 var AnonymousCustomerID = uuid.MustParse("00000000-0000-0000-0000-FFFFFFFFFFFF")
 
+// FinalConsumerNIF is the generic "Consumidor final" NIF mandated by
+// Portaria 302/2016 field 2.2.3.
+const FinalConsumerNIF CustomerTaxID = "999999990"
+
 // NewAnonymousCustomer builds the "Consumidor final" Customer used by
 func NewAnonymousCustomer() Customer {
 	return Customer{
 		CustomerID:    AnonymousCustomerID,
 		AccountID:     "ConsumidorFinal",
-		CustomerTaxID: "999999990",
+		CustomerTaxID: FinalConsumerNIF,
 		CompanyName:   "Consumidor final",
 	}
 }

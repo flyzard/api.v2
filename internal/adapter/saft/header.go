@@ -45,13 +45,13 @@ type xmlAddress struct {
 	Country        string `xml:"Country"`
 }
 
-func buildHeader(h Header) xmlHeader {
+func buildHeader(h Header, basis string) xmlHeader {
 	nif := string(h.Issuer.NIF)
 	return xmlHeader{
 		AuditFileVersion:          auditFileVersion,
 		CompanyID:                 nif,
 		TaxRegistrationNumber:     nif,
-		TaxAccountingBasis:        taxAccountingBasis,
+		TaxAccountingBasis:        basis,
 		CompanyName:               h.Issuer.Name,
 		BusinessName:              h.Issuer.TradeName,
 		CompanyAddress:            buildAddress(h.Issuer.Address),

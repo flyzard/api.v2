@@ -71,6 +71,7 @@ func (d *CommonDraftDocument) Validate() error {
 		return ErrNoLines
 	}
 	seen := make(map[int]struct{}, len(d.Lines))
+	hasM16 := false
 	for i, line := range d.Lines {
 		if err := line.Validate(); err != nil {
 			return fmt.Errorf("line %d: %w", i, err)
@@ -91,6 +92,33 @@ func (d *CommonDraftDocument) Validate() error {
 				return fmt.Errorf("line %d: stamp duty not allowed on %s", i, d.DocumentType)
 			}
 		}
+		hasM16 = hasM16 || lineExemption(line.Tax) == M16
+	}
+	return validateM16(d.Customer, hasM16)
+}
+
+// validateM16 enforces the substantive conditions of RITI Art. 14.º n.º 1 a)
+// — per Ofício-Circulado 30225/2020 the buyer's VAT registration in another
+// Member State is a substantive (not formal) condition of the intra-community
+// exemption — to the extent checkable at issuance: buyer in another EU member
+// state with a real VAT identification. It applies to every document family:
+// intra-EU transfer guias and receipts carry M16 lines too, not only invoices.
+//
+// Known limits, deliberate: an empty BillingAddress.Country is rejected
+// (conservative — the substantive condition can't be confirmed without it);
+// VAT-id/country consistency is NOT checked because SAF-T stores the tax id
+// without its country prefix. Transport evidence and VIES liveness are outside
+// software reach at issue time and stay the issuer's burden.
+func validateM16(customer Customer, hasM16 bool) error {
+	if !hasM16 {
+		return nil
+	}
+	country := customer.BillingAddress.Country
+	if country == "PT" || !euMemberStates[country] {
+		return fmt.Errorf("M16 (Art. 14.º RITI) requires a customer in another EU member state, got country %q", country)
+	}
+	if id := customer.CustomerTaxID; id == "" || id == FinalConsumerNIF {
+		return fmt.Errorf("M16 (Art. 14.º RITI) requires the customer's VAT identification number")
 	}
 	return nil
 }

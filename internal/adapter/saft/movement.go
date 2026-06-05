@@ -17,7 +17,6 @@ type xmlStockMovement struct {
 	DocumentStatus    xmlMovementStatus `xml:"DocumentStatus"`
 	Hash              string            `xml:"Hash"`
 	HashControl       string            `xml:"HashControl"`
-	Period            int               `xml:"Period"`
 	MovementDate      string            `xml:"MovementDate"`
 	MovementType      string            `xml:"MovementType"`
 	SystemEntryDate   string            `xml:"SystemEntryDate"`
@@ -75,7 +74,13 @@ func buildMovementOfGoods(stock []domain.StockMovement, issuerEAC string) xmlMov
 	var totalQty domain.Quantity
 	for _, d := range stock {
 		movements = append(movements, buildStockMovement(d, issuerEAC))
+		// NumberOfMovementLines (4.2.1) counts every line, but
+		// TotalQuantityIssued (4.2.2) excludes lines of MovementStatus "A"
+		// documents (Portaria 302/2016).
 		lineCount += len(d.Lines)
+		if d.Status == domain.StatusCancelled {
+			continue
+		}
 		for _, l := range d.Lines {
 			totalQty += l.Quantity
 		}
@@ -96,11 +101,10 @@ func buildStockMovement(d domain.StockMovement, issuerEAC string) xmlStockMoveme
 		DocumentStatus:    buildMovementStatus(d.IssuedDocument),
 		Hash:              string(d.Hash),
 		HashControl:       string(d.HashControl),
-		Period:            int(d.Period),
 		MovementDate:      fmtDate(d.Date),
 		MovementType:      string(d.DocumentType),
 		SystemEntryDate:   fmtDateTime(d.SystemEntryDate),
-		CustomerID:        d.Customer.CustomerID.String(),
+		CustomerID:        saftCustomerID(d.Customer.CustomerID),
 		SourceID:          d.SourceID,
 		EACCode:           issuerEAC,
 		ShipTo:            buildShippingPoint(d.ShipTo),

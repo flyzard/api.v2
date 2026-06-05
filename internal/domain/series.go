@@ -13,6 +13,7 @@ const (
 	SeriesPending   SeriesATStatus = "pending"
 	SeriesActive    SeriesATStatus = "active"
 	SeriesFinalized SeriesATStatus = "finalized"
+	SeriesCancelled SeriesATStatus = "cancelled"
 )
 
 type ProcessingMeans string
@@ -20,7 +21,6 @@ type ProcessingMeans string
 const (
 	ProcessingNormal   ProcessingMeans = "N"
 	ProcessingRecovery ProcessingMeans = "A"
-	ProcessingTraining ProcessingMeans = "T"
 )
 
 type Series struct {
@@ -29,7 +29,6 @@ type Series struct {
 	ATCode           string         `json:"at_code,omitempty"`
 	ATStatus         SeriesATStatus `json:"at_status"`
 	RegistrationDate *time.Time     `json:"registration_date,omitempty"`
-	Year             *int           `json:"year,omitempty"`
 	LastNum          int            `json:"last_num"`
 	LastHash         string         `json:"last_hash,omitempty"`
 	LastDate         *time.Time     `json:"last_date,omitempty"`
@@ -38,8 +37,8 @@ type Series struct {
 	// in the UPDATE WHERE Version=? clause to detect concurrent issuance against the
 	// same series. The domain stays single-threaded; this is bookkeeping only.
 	Version         uint64          `json:"version"`
-	Active          bool            `json:"active"`
 	FinalizedAt     *time.Time      `json:"finalized_at,omitempty"`
+	CancelledAt     *time.Time      `json:"cancelled_at,omitempty"`
 	ProcessingMeans ProcessingMeans `json:"processing_means"`
 }
 
@@ -98,7 +97,7 @@ func NewRecoverySeries(id string, docType DocumentType) (Series, error) {
 }
 
 func (s Series) IsRegistered() bool { return s.ATCode != "" }
-func (s Series) CanIssue() bool     { return s.Active && s.IsRegistered() }
+func (s Series) CanIssue() bool     { return s.ATStatus == SeriesActive && s.IsRegistered() }
 
 func (s *Series) RegisterWithAT(atCode string, at time.Time) error {
 	if s.ATCode != "" {
@@ -110,7 +109,32 @@ func (s *Series) RegisterWithAT(atCode string, at time.Time) error {
 	s.ATCode = atCode
 	s.RegistrationDate = &at
 	s.ATStatus = SeriesActive
-	s.Active = true
+	return nil
+}
+
+// Finalize closes the series locally after AT has accepted finalizarSerie
+// (Portaria 195/2020). A finalized series can never issue again.
+func (s *Series) Finalize(at time.Time) error {
+	if s.ATStatus != SeriesActive {
+		return fmt.Errorf("%w: series %q is %s", ErrSeriesNotActive, s.ID, s.ATStatus)
+	}
+	s.ATStatus = SeriesFinalized
+	s.FinalizedAt = &at
+	return nil
+}
+
+// Cancel voids the AT registration locally after AT has accepted anularSerie.
+// AT only accepts the cancellation of a series that never issued a document
+// (declaracaoNaoEmissao); a used series must be finalized instead.
+func (s *Series) Cancel(at time.Time) error {
+	if s.ATStatus != SeriesActive {
+		return fmt.Errorf("%w: series %q is %s", ErrSeriesNotActive, s.ID, s.ATStatus)
+	}
+	if s.LastNum > 0 {
+		return fmt.Errorf("%w: series %q issued %d documents", ErrSeriesHasDocuments, s.ID, s.LastNum)
+	}
+	s.ATStatus = SeriesCancelled
+	s.CancelledAt = &at
 	return nil
 }
 

@@ -1,8 +1,6 @@
 package main
 
 import (
-	"crypto/sha512"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -13,19 +11,6 @@ import (
 
 	"github.com/flyzard/invoicing.v2/internal/domain"
 )
-
-// stubSigner produces a deterministic 172-char base64 hash from the canonical
-// signing line. NOT real RSA-SHA1 — this is dev plumbing so the demo can advance
-// the hash chain without an AT-issued private key.
-type stubSigner struct{}
-
-func (stubSigner) Sign(canonical string) (string, string, error) {
-	payload := []byte(canonical)
-	a := sha512.Sum512(payload)
-	b := sha512.Sum512(a[:])
-	full := append(a[:], b[:]...) // 128 bytes → base64 is exactly 172 chars
-	return base64.StdEncoding.EncodeToString(full), "1", nil
-}
 
 // monotonicClock advances time minute-by-minute starting from a fixed base.
 // Tick returns the next "now" and is also the Clock that IssuedDocument.Cancel

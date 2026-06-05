@@ -17,7 +17,6 @@ type xmlWorkDocument struct {
 	DocumentStatus  xmlWorkStatus   `xml:"DocumentStatus"`
 	Hash            string          `xml:"Hash"`
 	HashControl     string          `xml:"HashControl"`
-	Period          int             `xml:"Period"`
 	WorkDate        string          `xml:"WorkDate"`
 	WorkType        string          `xml:"WorkType"`
 	SourceID        string          `xml:"SourceID"`
@@ -41,6 +40,12 @@ func buildWorkingDocuments(work []domain.WorkDocument, issuerEAC string) xmlWork
 	var credit domain.Money
 	for _, d := range work {
 		docs = append(docs, buildWorkDocument(d, issuerEAC))
+		// TotalDebit/TotalCredit exclude only WorkStatus "A" documents
+		// (Portaria 302/2016 fields 4.3.2/4.3.3) — unlike SalesInvoices,
+		// "F" (faturado) work documents stay in the sums.
+		if d.Status == domain.StatusCancelled {
+			continue
+		}
 		credit += d.Totals.NetTotal
 	}
 	sortByKey(docs, func(d xmlWorkDocument) string { return d.DocumentNumber })
@@ -61,13 +66,12 @@ func buildWorkDocument(d domain.WorkDocument, issuerEAC string) xmlWorkDocument 
 		DocumentStatus:  buildWorkStatus(d.IssuedDocument),
 		Hash:            string(d.Hash),
 		HashControl:     string(d.HashControl),
-		Period:          int(d.Period),
 		WorkDate:        fmtDate(d.Date),
 		WorkType:        string(d.DocumentType),
 		SourceID:        d.SourceID,
 		EACCode:         issuerEAC,
 		SystemEntryDate: fmtDateTime(d.SystemEntryDate),
-		CustomerID:      d.Customer.CustomerID.String(),
+		CustomerID:      saftCustomerID(d.Customer.CustomerID),
 		Lines:           lines,
 		DocumentTotals: xmlSimpleTotals{
 			TaxPayable: saftMoney(d.Totals.TaxTotal + d.Totals.StampDuty),

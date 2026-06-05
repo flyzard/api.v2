@@ -23,7 +23,6 @@ type xmlInvoice struct {
 	DocumentStatus  xmlDocumentStatus   `xml:"DocumentStatus"`
 	Hash            string              `xml:"Hash"`
 	HashControl     string              `xml:"HashControl"`
-	Period          int                 `xml:"Period"`
 	InvoiceDate     string              `xml:"InvoiceDate"`
 	InvoiceType     string              `xml:"InvoiceType"`
 	SpecialRegimes  xmlSpecialRegimes   `xml:"SpecialRegimes"`
@@ -88,6 +87,12 @@ func buildSalesInvoices(sales []domain.SalesInvoice, issuerEAC string) xmlSalesI
 	var debit, credit domain.Money
 	for _, d := range sales {
 		invoices = append(invoices, buildInvoice(d, issuerEAC))
+		// TotalDebit/TotalCredit exclude InvoiceStatus "A" and "F" documents
+		// (Portaria 302/2016 fields 4.1.2/4.1.3); they stay listed and counted
+		// in NumberOfEntries (4.1.1).
+		if d.Status == domain.StatusCancelled || d.Status == domain.StatusBilled {
+			continue
+		}
 		if d.DocumentType == domain.NC {
 			debit += d.Totals.NetTotal
 		} else {
@@ -117,14 +122,13 @@ func buildInvoice(d domain.SalesInvoice, issuerEAC string) xmlInvoice {
 		DocumentStatus:  buildDocumentStatus(d.IssuedDocument),
 		Hash:            string(d.Hash),
 		HashControl:     string(d.HashControl),
-		Period:          int(d.Period),
 		InvoiceDate:     fmtDate(d.Date),
 		InvoiceType:     string(d.DocumentType),
 		SpecialRegimes:  buildSpecialRegimes(d.SpecialRegimes),
 		SourceID:        d.SourceID,
 		EACCode:         issuerEAC,
 		SystemEntryDate: fmtDateTime(d.SystemEntryDate),
-		CustomerID:      d.Customer.CustomerID.String(),
+		CustomerID:      saftCustomerID(d.Customer.CustomerID),
 		Lines:           lines,
 		DocumentTotals:  buildSalesTotals(d),
 		WithholdingTax:  buildWithholding(d.WithholdingTax),

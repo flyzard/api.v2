@@ -24,6 +24,7 @@ const (
 	CM DocumentType = "CM"
 	FC DocumentType = "FC"
 	FO DocumentType = "FO"
+	OU DocumentType = "OU"
 
 	// Receipts
 	RC DocumentType = "RC"
@@ -67,6 +68,7 @@ var documentTypes = map[DocumentType]docTypeRules{
 	CM: {Family: familyWorking, AllowsStamp: true, RequiresLineTax: true},
 	FC: {Family: familyWorking, AllowsStamp: true, RequiresLineTax: true},
 	FO: {Family: familyWorking, AllowsStamp: true, RequiresLineTax: true},
+	OU: {Family: familyWorking, AllowsStamp: true, RequiresLineTax: true},
 
 	RC: {Family: familyReceipt},
 	RG: {Family: familyReceipt},

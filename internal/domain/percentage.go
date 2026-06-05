@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"strconv"
 )
 
 // Percent is stored in basis points: 10000 = 100%, 2300 = 23%, 650 = 6.5%.
@@ -26,3 +27,9 @@ func NewPercent(value float64) (Percent, error) {
 
 func (p Percent) MarshalJSON() ([]byte, error)     { return json.Marshal(float64(p) * 100 / PercentScale) }
 func (p *Percent) UnmarshalJSON(data []byte) error { return unmarshalFloat(data, NewPercent, p) }
+
+// Format2DP renders the percentage at 2 decimal places ("23.00") — the
+// rendering AT expects for TaxPercentage fields.
+func (p Percent) Format2DP() string {
+	return strconv.FormatFloat(float64(p)*100/PercentScale, 'f', 2, 64)
+}

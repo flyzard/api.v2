@@ -14,7 +14,6 @@ type xmlPayments struct {
 type xmlPayment struct {
 	PaymentRefNo    string              `xml:"PaymentRefNo"`
 	ATCUD           string              `xml:"ATCUD"`
-	Period          int                 `xml:"Period"`
 	TransactionID   string              `xml:"TransactionID,omitempty"`
 	TransactionDate string              `xml:"TransactionDate"`
 	PaymentType     string              `xml:"PaymentType"`
@@ -113,7 +112,6 @@ func buildPayment(p domain.Payment) xmlPayment {
 	return xmlPayment{
 		PaymentRefNo:    p.Number.Format(),
 		ATCUD:           string(p.ATCUD),
-		Period:          int(p.Period),
 		TransactionID:   p.TransactionID,
 		TransactionDate: fmtDate(p.TransactionDate),
 		PaymentType:     string(p.Type),
@@ -129,7 +127,7 @@ func buildPayment(p domain.Payment) xmlPayment {
 		PaymentMethod:   methods,
 		SourceID:        p.SourceID,
 		SystemEntryDate: fmtDateTime(p.SystemEntryDate),
-		CustomerID:      p.Customer.CustomerID.String(),
+		CustomerID:      saftCustomerID(p.Customer.CustomerID),
 		Lines:           lines,
 		DocumentTotals: xmlPaymentTotals{
 			TaxPayable: saftMoney(p.TaxPayable),

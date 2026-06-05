@@ -222,7 +222,6 @@ func (l PaymentLine) Validate() error {
 type Payment struct {
 	Number          DocNumber      `json:"number"`
 	ATCUD           ATCUD          `json:"atcud"`
-	Period          Period         `json:"period,omitempty"`
 	TransactionID   string         `json:"transaction_id,omitempty"`
 	TransactionDate time.Time      `json:"transaction_date"`
 	Type            DocumentType   `json:"type"`
@@ -244,7 +243,7 @@ type Payment struct {
 }
 
 // PaymentDraft is the pre-issue payment carrying all the business data;
-// IssuePayment turns it into a Payment with Number/ATCUD/Period/SystemEntryDate set.
+// IssuePayment turns it into a Payment with Number/ATCUD/SystemEntryDate set.
 type PaymentDraft struct {
 	Type            DocumentType
 	TransactionDate time.Time
@@ -280,6 +279,7 @@ func (d *PaymentDraft) Validate() error {
 			return fmt.Errorf("methods[%d]: %w", i, err)
 		}
 	}
+	hasM16 := false
 	for i, line := range d.Lines {
 		if err := line.Validate(); err != nil {
 			return fmt.Errorf("line %d: %w", i, err)
@@ -288,6 +288,10 @@ func (d *PaymentDraft) Validate() error {
 		if d.Type == RC && line.Tax == nil {
 			return fmt.Errorf("line %d: RC requires Tax on every line", i)
 		}
+		hasM16 = hasM16 || lineExemption(line.Tax) == M16
+	}
+	if err := validateM16(d.Customer, hasM16); err != nil {
+		return err
 	}
 	for i, wh := range d.WithholdingTax {
 		if err := wh.Validate(); err != nil {
@@ -341,7 +345,7 @@ func IssuePayment(draft *PaymentDraft, series *Series, now time.Time, totals Pay
 		return Payment{}, fmt.Errorf("totals must be non-negative")
 	}
 
-	seq, number, atcud, period, err := nextDocIdentity(series, draft.Type, txDate)
+	seq, number, atcud, err := nextDocIdentity(series, draft.Type)
 	if err != nil {
 		return Payment{}, err
 	}
@@ -349,7 +353,6 @@ func IssuePayment(draft *PaymentDraft, series *Series, now time.Time, totals Pay
 	p := Payment{
 		Number:          number,
 		ATCUD:           atcud,
-		Period:          period,
 		TransactionID:   draft.TransactionID,
 		TransactionDate: txDate,
 		Type:            draft.Type,
@@ -387,7 +390,7 @@ func (p *Payment) Cancel(reason string, at time.Time) error {
 	default:
 		return fmt.Errorf("cannot cancel from status %q", p.Status)
 	}
-	if err := validateCancellation(reason, p.TransactionDate); err != nil {
+	if err := validateCancellation(reason, p.TransactionDate, at); err != nil {
 		return err
 	}
 	p.Status = StatusCancelled

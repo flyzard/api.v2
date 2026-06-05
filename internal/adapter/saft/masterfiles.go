@@ -2,6 +2,7 @@ package saft
 
 import (
 	"cmp"
+	"encoding/base64"
 	"fmt"
 	"slices"
 
@@ -125,18 +126,49 @@ func buildMasterFiles(sales []domain.SalesInvoice, stock []domain.StockMovement,
 
 func buildCustomer(c domain.Customer) xmlCustomer {
 	return xmlCustomer{
-		CustomerID:           c.CustomerID.String(),
+		CustomerID:           saftCustomerID(c.CustomerID),
 		AccountID:            c.AccountID,
 		CustomerTaxID:        string(c.CustomerTaxID),
 		CompanyName:          c.CompanyName,
 		Contact:              c.Contact,
-		BillingAddress:       buildAddress(c.BillingAddress),
+		BillingAddress:       buildCustomerAddress(c.BillingAddress),
 		Telephone:            c.Telephone,
 		Fax:                  c.Fax,
 		Email:                c.Email,
 		Website:              c.Website,
 		SelfBillingIndicator: boolToInt(c.SelfBillingIndicator),
 	}
+}
+
+// saftCustomerID renders the domain customer UUID as a SAF-T CustomerID.
+// The XSD caps CustomerID at 30 chars (SAFPTtextTypeMandatoryMax30Car), so
+// the 36-char canonical UUID form doesn't fit; base64url of the 16 raw bytes
+// is 22 chars, deterministic and collision-free.
+func saftCustomerID(id uuid.UUID) string {
+	return base64.RawURLEncoding.EncodeToString(id[:])
+}
+
+// buildCustomerAddress fills the mandatory customer address elements with the
+// literal "Desconhecido" required by Portaria 302/2016 (2.2.6.x) when the
+// information is unknown — notably for "Consumidor final" operations. Only
+// CustomerAddressStructure admits Country "Desconhecido"; company addresses
+// (buildAddress) must stay strict.
+func buildCustomerAddress(a domain.Address) xmlAddress {
+	const unknown = "Desconhecido"
+	out := buildAddress(a)
+	if out.AddressDetail == "" {
+		out.AddressDetail = unknown
+	}
+	if out.City == "" {
+		out.City = unknown
+	}
+	if out.PostalCode == "" {
+		out.PostalCode = unknown
+	}
+	if out.Country == "" {
+		out.Country = unknown
+	}
+	return out
 }
 
 func buildProduct(p domain.Product) xmlProduct {

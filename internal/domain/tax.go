@@ -236,6 +236,18 @@ func (e Exemption) Description() string {
 
 func (e Exemption) IsReverseCharge() bool { return exemptions[e].IsReverseCharge }
 
+// euMemberStates is the EU-27 in ISO 3166-1 alpha-2 (Greece is "GR" in ISO
+// even though VIES VAT prefixes use "EL"). Consumed by the M16 issuance gate:
+// RITI Art. 14.º n.º 1 a) exempts intra-community supplies only when the buyer
+// is VAT-registered in another Member State.
+var euMemberStates = map[Country]bool{
+	"AT": true, "BE": true, "BG": true, "HR": true, "CY": true, "CZ": true,
+	"DK": true, "EE": true, "FI": true, "FR": true, "DE": true, "GR": true,
+	"HU": true, "IE": true, "IT": true, "LV": true, "LT": true, "LU": true,
+	"MT": true, "NL": true, "PL": true, "PT": true, "RO": true, "SK": true,
+	"SI": true, "ES": true, "SE": true,
+}
+
 // TaxBreakdownEntry is one row of the per-document aggregation grouped by
 // (Region, Category, ExemptionCode). The SAF-T projector and the QR fields
 // (I/J/K series) both consume this shape; computing it once at issuance keeps

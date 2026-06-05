@@ -34,7 +34,9 @@ func (a ATCUD) Validate() error {
 	return nil
 }
 
-// ValidateATCode checks the AT validation code returned by the WDT webservice.
+// ValidateATCode checks the AT validation code returned by the SeriesWS
+// webservice (codValidacaoSerie — minLength 8 per the AT manual "Comunicação
+// de Séries Documentais, Aspetos Específicos" v1.2, no maximum specified).
 func ValidateATCode(code string) error {
 	if len(code) < 8 {
 		return fmt.Errorf("at code length must be >= 8, got %d (%q)", len(code), code)

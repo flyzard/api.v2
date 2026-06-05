@@ -32,6 +32,20 @@ var hashControlPattern = regexp.MustCompile(
 
 type HashControl string
 
+// FourChars returns the hash characters at 1-based positions 1, 11, 21, 31 —
+// NOT the first four. Used by QR field Q and the fatcorews HashCharacters
+// field. Bounds-guarded against short hashes.
+func (h Hash) FourChars() string {
+	s := string(h)
+	var b []byte
+	for _, pos := range []int{1, 11, 21, 31} {
+		if pos-1 < len(s) {
+			b = append(b, s[pos-1])
+		}
+	}
+	return string(b)
+}
+
 func (c HashControl) Validate() error {
 	if c == "" {
 		return fmt.Errorf("hash control is required")

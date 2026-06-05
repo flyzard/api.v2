@@ -37,7 +37,6 @@ func minimalSalesInvoice() domain.SalesInvoice {
 			SystemEntryDate: date,
 			SourceID:        "issuer@test",
 			SourceBilling:   domain.SourceBillingProduced,
-			Period:          5,
 			Status:          domain.StatusNormal,
 			StatusDate:      date,
 			DocumentCore: domain.DocumentCore{
@@ -80,6 +79,15 @@ func must[T any](v T, err error) T {
 	return v
 }
 
+func decodeWin1252(t *testing.T, out []byte) string {
+	t.Helper()
+	utf8, err := charmap.Windows1252.NewDecoder().Bytes(out)
+	if err != nil {
+		t.Fatalf("Win-1252 → UTF-8 decode: %v", err)
+	}
+	return string(utf8)
+}
+
 func TestExport_StructureIntact(t *testing.T) {
 	inv := minimalSalesInvoice()
 	hdr := Header{
@@ -110,13 +118,9 @@ func TestExport_StructureIntact(t *testing.T) {
 		t.Fatalf("Export: %v", err)
 	}
 
-	// Decoder reads the bytes via the Windows-1252 charset so the test
-	// catches regressions in the encoding pipeline, not only struct shapes.
-	utf8, err := charmap.Windows1252.NewDecoder().Bytes(out)
-	if err != nil {
-		t.Fatalf("Win-1252 → UTF-8 decode: %v", err)
-	}
-	body := string(utf8)
+	// Decoding via the Windows-1252 charset so the test catches regressions
+	// in the encoding pipeline, not only struct shapes.
+	body := decodeWin1252(t, out)
 
 	wants := []string{
 		`<?xml version="1.0" encoding="Windows-1252"?>`,
@@ -214,19 +218,190 @@ func TestExport_CurrencyDirection(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Export: %v", err)
 	}
-	body, err := charmap.Windows1252.NewDecoder().Bytes(out)
-	if err != nil {
-		t.Fatalf("decode: %v", err)
-	}
+	body := decodeWin1252(t, out)
 	wants := []string{
 		`<CurrencyCode>USD</CurrencyCode>`,
 		`<CurrencyAmount>347.20</CurrencyAmount>`, // 320.00 × 1.085 = 347.20
 		`<ExchangeRate>1.085000</ExchangeRate>`,
 	}
 	for _, w := range wants {
-		if !strings.Contains(string(body), w) {
+		if !strings.Contains(body, w) {
 			t.Errorf("missing %q in output", w)
 		}
+	}
+}
+
+// TestExport_ControlSumsExcludeCancelledAndBilled pins Portaria 302/2016
+// fields 4.1.1–4.1.3: NumberOfEntries counts every invoice, while TotalDebit/
+// TotalCredit exclude InvoiceStatus "A" and "F".
+func TestExport_ControlSumsExcludeCancelledAndBilled(t *testing.T) {
+	normal := minimalSalesInvoice()
+	cancelled := minimalSalesInvoice()
+	cancelled.Number = must(domain.NewDocNumber(domain.FT, "FT2026", 2))
+	cancelled.Status = domain.StatusCancelled
+	billed := minimalSalesInvoice()
+	billed.Number = must(domain.NewDocNumber(domain.FT, "FT2026", 3))
+	billed.Status = domain.StatusBilled
+
+	out, err := Export(Header{}, []domain.SalesInvoice{normal, cancelled, billed}, nil, nil, nil)
+	if err != nil {
+		t.Fatalf("Export: %v", err)
+	}
+	body := decodeWin1252(t, out)
+
+	for _, w := range []string{
+		`<NumberOfEntries>3</NumberOfEntries>`,
+		`<TotalDebit>0.00</TotalDebit>`,
+		`<TotalCredit>100.00</TotalCredit>`, // only the Normal invoice
+	} {
+		if !strings.Contains(body, w) {
+			t.Errorf("missing %q in output", w)
+		}
+	}
+}
+
+// TestExport_WorkingSumsExcludeCancelledOnly pins Portaria 302/2016 fields
+// 4.3.2/4.3.3: only WorkStatus "A" leaves the sums — "F" (faturado) work
+// documents stay counted, unlike SalesInvoices.
+func TestExport_WorkingSumsExcludeCancelledOnly(t *testing.T) {
+	mk := func(seq int, status domain.DocumentStatus) domain.WorkDocument {
+		inv := minimalSalesInvoice()
+		w := domain.WorkDocument{IssuedDocument: inv.IssuedDocument}
+		w.DocumentType = domain.OR
+		w.Number = must(domain.NewDocNumber(domain.OR, "OR2026", seq))
+		w.Status = status
+		return w
+	}
+
+	out, err := Export(Header{}, nil, nil, []domain.WorkDocument{
+		mk(1, domain.StatusNormal),
+		mk(2, domain.StatusCancelled),
+		mk(3, domain.StatusBilled),
+	}, nil)
+	if err != nil {
+		t.Fatalf("Export: %v", err)
+	}
+	body := decodeWin1252(t, out)
+
+	for _, w := range []string{
+		`<NumberOfEntries>3</NumberOfEntries>`,
+		`<TotalCredit>200.00</TotalCredit>`, // Normal + Billed; Cancelled out
+	} {
+		if !strings.Contains(body, w) {
+			t.Errorf("missing %q in output", w)
+		}
+	}
+}
+
+// TestExport_MovementQuantityExcludesCancelled pins Portaria 302/2016 fields
+// 4.2.1/4.2.2: NumberOfMovementLines counts every line, TotalQuantityIssued
+// excludes lines of MovementStatus "A" documents.
+func TestExport_MovementQuantityExcludesCancelled(t *testing.T) {
+	mk := func(seq int, status domain.DocumentStatus) domain.StockMovement {
+		inv := minimalSalesInvoice()
+		m := domain.StockMovement{IssuedDocument: inv.IssuedDocument}
+		m.DocumentType = domain.GT
+		m.Number = must(domain.NewDocNumber(domain.GT, "GT2026", seq))
+		m.Status = status
+		return m
+	}
+
+	out, err := Export(Header{}, nil, []domain.StockMovement{
+		mk(1, domain.StatusNormal),    // qty 2
+		mk(2, domain.StatusCancelled), // qty 2, excluded from the sum
+	}, nil, nil)
+	if err != nil {
+		t.Fatalf("Export: %v", err)
+	}
+	body := decodeWin1252(t, out)
+
+	for _, w := range []string{
+		`<NumberOfMovementLines>2</NumberOfMovementLines>`,
+		`<TotalQuantityIssued>2</TotalQuantityIssued>`,
+	} {
+		if !strings.Contains(body, w) {
+			t.Errorf("missing %q in output", w)
+		}
+	}
+}
+
+// TestExport_CustomerIDFitsXSDAndPeriodOmitted pins two schema rules:
+// CustomerID must fit SAFPTtextTypeMandatoryMax30Car (≤30 chars — the raw
+// 36-char UUID form does not), and the optional Period element is omitted
+// (it means "month of the taxation period", which the domain doesn't model).
+func TestExport_CustomerIDFitsXSDAndPeriodOmitted(t *testing.T) {
+	inv := minimalSalesInvoice()
+	out, err := Export(Header{}, []domain.SalesInvoice{inv}, nil, nil, nil)
+	if err != nil {
+		t.Fatalf("Export: %v", err)
+	}
+	body := decodeWin1252(t, out)
+
+	id := saftCustomerID(inv.Customer.CustomerID)
+	if len(id) > 30 {
+		t.Errorf("saftCustomerID too long for XSD: %d chars (%q)", len(id), id)
+	}
+	// Same key in MasterFiles/Customer and in the document — referential
+	// integrity per Portaria 302/2016 field 4.1.4.14.
+	if got := strings.Count(body, `<CustomerID>`+id+`</CustomerID>`); got != 2 {
+		t.Errorf("CustomerID %q occurrences = %d, want 2 (master + invoice)", id, got)
+	}
+	if strings.Contains(body, `<Period>`) {
+		t.Error("Period element present — should be omitted")
+	}
+}
+
+// TestExport_AnonymousCustomerAddressDesconhecido pins Portaria 302/2016
+// 2.2.6.x: address fields of "Consumidor final" operations carry the literal
+// "Desconhecido".
+func TestExport_AnonymousCustomerAddressDesconhecido(t *testing.T) {
+	inv := minimalSalesInvoice()
+	inv.Customer = domain.NewAnonymousCustomer()
+
+	out, err := Export(Header{}, []domain.SalesInvoice{inv}, nil, nil, nil)
+	if err != nil {
+		t.Fatalf("Export: %v", err)
+	}
+	body := decodeWin1252(t, out)
+
+	for _, w := range []string{
+		`<CustomerTaxID>999999990</CustomerTaxID>`,
+		`<CompanyName>Consumidor final</CompanyName>`,
+		`<AddressDetail>Desconhecido</AddressDetail>`,
+		`<City>Desconhecido</City>`,
+		`<PostalCode>Desconhecido</PostalCode>`,
+		`<Country>Desconhecido</Country>`,
+	} {
+		if !strings.Contains(body, w) {
+			t.Errorf("missing %q in output", w)
+		}
+	}
+}
+
+// TestExport_TaxAccountingBasis pins the Header basis: default "F", explicit
+// "S" for the per-supplier autofaturação file (Portaria 302/2016 alínea g),
+// anything else rejected before emission.
+func TestExport_TaxAccountingBasis(t *testing.T) {
+	inv := minimalSalesInvoice()
+
+	out, err := Export(Header{}, []domain.SalesInvoice{inv}, nil, nil, nil)
+	if err != nil {
+		t.Fatalf("Export: %v", err)
+	}
+	if !strings.Contains(decodeWin1252(t, out), `<TaxAccountingBasis>F</TaxAccountingBasis>`) {
+		t.Error("default basis should be F")
+	}
+
+	out, err = Export(Header{TaxAccountingBasis: "S"}, []domain.SalesInvoice{inv}, nil, nil, nil)
+	if err != nil {
+		t.Fatalf("Export basis S: %v", err)
+	}
+	if !strings.Contains(decodeWin1252(t, out), `<TaxAccountingBasis>S</TaxAccountingBasis>`) {
+		t.Error("explicit S basis not emitted")
+	}
+
+	if _, err = Export(Header{TaxAccountingBasis: "C"}, []domain.SalesInvoice{inv}, nil, nil, nil); err == nil {
+		t.Error("basis C should be rejected")
 	}
 }
 

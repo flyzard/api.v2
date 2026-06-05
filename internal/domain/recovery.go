@@ -101,6 +101,10 @@ func IntegrateRecoveredPayment(draft *PaymentDraft, series *Series, now time.Tim
 // through so family invariants keep working (recovered FS needs
 // opts.IssuerEAC/opts.FSLimits; recovered ND needs opts.Reader);
 // SourceBilling and Recovered are forced here.
+//
+// The M16 gate is deliberately NOT bypassed: a recovered M16 document must
+// still carry the EU non-PT customer with a VAT id — the original was only
+// legal under those same RITI Art. 14.º conditions.
 func IntegrateRecoveredSalesInvoice(draft *DraftSalesInvoice, ref RecoveredRef, series *Series, signer Signer, sourceID string, now time.Time, opts IssueOptions, qr QRConfig) (SalesInvoice, error) {
 	opts.SourceBilling = SourceBillingManual
 	opts.Recovered = &ref

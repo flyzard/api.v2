@@ -122,6 +122,18 @@ func (n NotSubjectTax) Validate() error {
 	return nil
 }
 
+// lineExemption extracts the Mxx exemption code a LineTax carries, or "" when
+// none (StampTax, non-exempt VAT, nil).
+func lineExemption(t LineTax) Exemption {
+	switch v := t.(type) {
+	case VATTax:
+		return v.Rate.Exemption
+	case NotSubjectTax:
+		return v.Reason
+	}
+	return ""
+}
+
 func NewVATLineTax(region TaxRegion, category TaxCategory, exemption Exemption, exemptReason string) (LineTax, error) {
 	rate, err := GetTaxRate(region, category, exemption)
 	if err != nil {

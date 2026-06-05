@@ -28,20 +28,18 @@ func main() {
 		log.Fatal(err)
 	}
 
-	var signer domain.Signer = stubSigner{}
-	signerName := "stub (dev — set AT_SIGNING_KEY_FILE for real signatures)"
-	if cfg.SigningKeyFile != "" {
-		pemBytes, err := os.ReadFile(cfg.SigningKeyFile)
-		if err != nil {
-			log.Fatalf("read signing key %s: %v", cfg.SigningKeyFile, err)
-		}
-		rs, err := signing.NewRSASigner(pemBytes, 1)
-		if err != nil {
-			log.Fatalf("signing key %s: %v", cfg.SigningKeyFile, err)
-		}
-		signer = rs
-		signerName = "RSA-SHA1 (Portaria 363/2010) · key version 1"
+	if cfg.SigningKeyFile == "" {
+		log.Fatal("AT_SIGNING_KEY_FILE is required")
 	}
+	pemBytes, err := os.ReadFile(cfg.SigningKeyFile)
+	if err != nil {
+		log.Fatalf("read signing key %s: %v", cfg.SigningKeyFile, err)
+	}
+	signer, err := signing.NewRSASigner(pemBytes, 1)
+	if err != nil {
+		log.Fatalf("signing key %s: %v", cfg.SigningKeyFile, err)
+	}
+	signerName := "RSA-SHA1 (Portaria 363/2010) · key version 1"
 
 	f := buildFixtures(clockBase)
 	c := &ctx{

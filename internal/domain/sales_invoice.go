@@ -1,6 +1,7 @@
 package domain
 
 import (
+	"encoding/json"
 	"fmt"
 	"time"
 )
@@ -21,6 +22,11 @@ type SalesInvoiceFields struct {
 	// Currency is the SAF-T Invoice/DocumentTotals/Currency view for non-EUR
 	// originals. Mirrors Payment.Currency. Date must equal the invoice Date.
 	Currency *Currency `json:"currency,omitempty"`
+	// GlobalDiscount is a document-level commercial discount (AT cert §5.7),
+	// prorated into line nets at issue time (letter Nota 1: UnitPrice reflects
+	// header discounts) and reported as DocumentTotals/Settlement/
+	// SettlementAmount in SAF-T. Never carries line-discount sums (round 3348).
+	GlobalDiscount Discount `json:"global_discount,omitempty"`
 }
 
 // FSLimits caps the GrossTotal of an FS (simplified invoice / "fatura
@@ -125,16 +131,53 @@ func (p FRPayment) Validate() error {
 	return nil
 }
 
+// UnmarshalJSON peels off the polymorphic GlobalDiscount as a RawMessage and
+// dispatches through unmarshalDiscount; everything else round-trips via the alias.
+func (f *SalesInvoiceFields) UnmarshalJSON(data []byte) error {
+	type alias SalesInvoiceFields
+	aux := struct {
+		*alias
+		GlobalDiscount json.RawMessage `json:"global_discount,omitempty"`
+	}{alias: (*alias)(f)}
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+	d, err := unmarshalDiscount(aux.GlobalDiscount)
+	if err != nil {
+		return fmt.Errorf("global_discount: %w", err)
+	}
+	f.GlobalDiscount = d
+	return nil
+}
+
 // SalesInvoice is the SAF-T SourceDocuments/SalesInvoices/Invoice for FT/FS/FR/NC/ND.
 type SalesInvoice struct {
 	IssuedDocument
 	SalesInvoiceFields
 }
 
+// UnmarshalJSON decodes both embedded structs explicitly. Without this,
+// SalesInvoiceFields.UnmarshalJSON would be promoted onto SalesInvoice and
+// silently drop every IssuedDocument field.
+func (s *SalesInvoice) UnmarshalJSON(data []byte) error {
+	if err := json.Unmarshal(data, &s.IssuedDocument); err != nil {
+		return err
+	}
+	return json.Unmarshal(data, &s.SalesInvoiceFields)
+}
+
 // DraftSalesInvoice is the pre-issue sales invoice.
 type DraftSalesInvoice struct {
 	CommonDraftDocument
 	SalesInvoiceFields
+}
+
+// UnmarshalJSON — same promotion fix as SalesInvoice, for the draft side.
+func (d *DraftSalesInvoice) UnmarshalJSON(data []byte) error {
+	if err := json.Unmarshal(data, &d.CommonDraftDocument); err != nil {
+		return err
+	}
+	return json.Unmarshal(data, &d.SalesInvoiceFields)
 }
 
 func (d *DraftSalesInvoice) Validate() error {
@@ -166,13 +209,108 @@ func (d *DraftSalesInvoice) Validate() error {
 	if d.DocumentType == FR && len(d.Payments) == 0 {
 		return fmt.Errorf("FR requires at least one payment entry")
 	}
+	if d.GlobalDiscount != nil {
+		_, sum := d.globalDiscountBases()
+		if sum <= 0 {
+			return ErrGlobalDiscountOnZeroNet
+		}
+		if a, ok := d.GlobalDiscount.(AmountDiscount); ok && a.Amount > sum {
+			return ErrGlobalDiscountExceedsNet
+		}
+	}
 	return nil
+}
+
+// globalDiscountBases is each line's post-line-discount net plus their sum —
+// the proration weights of applyGlobalDiscount and the ceiling Validate holds
+// the document-level discount against. One definition so the two can't drift.
+func (d *DraftSalesInvoice) globalDiscountBases() ([]Money, Money) {
+	bases := make([]Money, len(d.Lines))
+	var sum Money
+	for i, l := range d.Lines {
+		bases[i] = applyDiscount(l.Discount, l.LineSubtotal())
+		sum += bases[i]
+	}
+	return bases, sum
+}
+
+// applyGlobalDiscount prorates GlobalDiscount across the lines' post-line-
+// discount nets at cent granularity (largest remainder, ties to the earlier
+// line). It always recomputes from scratch: nil GlobalDiscount resets every
+// share to zero, so clearing the field after a pre-issue CalculateTotals
+// cannot leave orphaned shares baked into signed totals.
+func (d *DraftSalesInvoice) applyGlobalDiscount() {
+	for i := range d.Lines {
+		d.Lines[i].GlobalDiscountShare = 0
+	}
+	if d.GlobalDiscount == nil {
+		return
+	}
+	bases, sum := d.globalDiscountBases()
+	if sum <= 0 {
+		return // Validate rejects with ErrGlobalDiscountOnZeroNet
+	}
+	cents := roundDiv(int64(sum-applyDiscount(d.GlobalDiscount, sum)), centScale)
+	if cents <= 0 {
+		return
+	}
+	if cents*centScale > int64(sum) {
+		cents = int64(sum) / centScale // near-100% discount on a sub-cent sum
+	}
+	shares := prorateCents(cents, bases)
+	// prorateCents allocates whole cents; a largest-remainder bump can
+	// overshoot a base with a sub-cent fraction (percent line discounts
+	// produce those), which would sign a negative LineNetAmount. Clamp each
+	// share to its line's whole-cent capacity and hand freed cents to lines
+	// with slack; with no slack anywhere the realized discount shrinks by
+	// the excess — SettlementAmount derives from Σ shares, so it stays
+	// consistent either way.
+	var excess int64
+	for i, share := range shares {
+		if lineCap := int64(bases[i]) / centScale * centScale; int64(share) > lineCap {
+			excess += (int64(share) - lineCap) / centScale
+			shares[i] = Money(lineCap)
+		}
+	}
+	for excess > 0 {
+		moved := false
+		for i := range shares {
+			if excess == 0 {
+				break
+			}
+			if int64(bases[i])-int64(shares[i]) >= centScale {
+				shares[i] += Money(centScale)
+				excess--
+				moved = true
+			}
+		}
+		if !moved {
+			break
+		}
+	}
+	for i, share := range shares {
+		d.Lines[i].GlobalDiscountShare = share
+	}
+}
+
+// CalculateTotals shadows the embedded method so pre-issue callers that read
+// draft.Totals (currency blocks, FR payment sums) see post-global-discount
+// values. issueCommon calls the embedded method directly — shares are already
+// baked on the lines by then, so both paths agree.
+func (d *DraftSalesInvoice) CalculateTotals() {
+	d.applyGlobalDiscount()
+	d.CommonDraftDocument.CalculateTotals()
 }
 
 func IssueSalesInvoice(draft *DraftSalesInvoice, series *Series, signer Signer, sourceID string, now time.Time, opts IssueOptions, qr QRConfig) (SalesInvoice, error) {
 	if err := draft.Validate(); err != nil {
 		return SalesInvoice{}, fmt.Errorf("draft: %w", err)
 	}
+	// Bake global-discount shares onto the lines before issueCommon: it
+	// recalculates totals on the embedded CommonDraftDocument, where the
+	// CalculateTotals shadow does not apply. Idempotent — FS/FR branches
+	// re-bake via the shadow without drift.
+	draft.applyGlobalDiscount()
 	// Mirrors IssuePayment: the FX rate must be dated on the invoice date so it
 	// cannot drift between draft prep and issuance (SalesInvoiceFields.Currency contract).
 	if draft.Currency != nil {

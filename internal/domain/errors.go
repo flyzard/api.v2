@@ -34,4 +34,6 @@ var (
 	ErrSourceDocCancelled         = errors.New("allocation references a cancelled document")
 	ErrSourceCustomerMismatch     = errors.New("allocation source document belongs to a different customer")
 	ErrAllocationExceedsSource    = errors.New("cumulative allocations exceed source document total")
+	ErrGlobalDiscountExceedsNet   = errors.New("global discount exceeds the document's post-line-discount net total")
+	ErrGlobalDiscountOnZeroNet    = errors.New("global discount requires a positive post-line-discount net total")
 )

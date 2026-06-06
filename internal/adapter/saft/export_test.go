@@ -88,9 +88,8 @@ func decodeWin1252(t *testing.T, out []byte) string {
 	return string(utf8)
 }
 
-func TestExport_StructureIntact(t *testing.T) {
-	inv := minimalSalesInvoice()
-	hdr := Header{
+func gdTestHeader() Header {
+	return Header{
 		Issuer: domain.Company{
 			NIF:        "500000000",
 			Name:       "Test Issuer Lda.",
@@ -112,6 +111,126 @@ func TestExport_StructureIntact(t *testing.T) {
 		End:       time.Date(2026, 5, 31, 0, 0, 0, 0, time.UTC),
 		CreatedAt: time.Date(2026, 5, 22, 0, 0, 0, 0, time.UTC),
 	}
+}
+
+// gdInvoice mutates minimalSalesInvoice into the §5.7 shape: line 1 =
+// 100 × €0.55 with 8.8% line discount + €2.50 global share, line 2 =
+// 1 × €10.00 with €0.50 global share.
+func gdInvoice() domain.SalesInvoice {
+	inv := minimalSalesInvoice()
+	line1 := inv.Lines[0]
+	line1.Quantity = must(domain.NewQuantity(100))
+	line1.UnitPrice = must(domain.NewMoney(0.55))
+	line1.Discount = must(domain.NewPercentDiscount(8.8))
+	line1.GlobalDiscountShare = must(domain.NewMoney(2.50))
+	line2 := line1
+	line2.LineNumber = 2
+	line2.Quantity = must(domain.NewQuantity(1))
+	line2.UnitPrice = must(domain.NewMoney(10.00))
+	line2.Discount = nil
+	line2.GlobalDiscountShare = must(domain.NewMoney(0.50))
+	// NOTE: Totals are intentionally left as minimalSalesInvoice's stale values
+	// (Net 100/Gross 123). The projector reads Totals verbatim; tests using this
+	// fixture assert Settlement/line elements only — do NOT use gdInvoice() for
+	// totals assertions.
+	inv.Lines = []domain.DocumentLine{line1, line2}
+	return inv
+}
+
+func TestExport_GlobalDiscountSettlement(t *testing.T) {
+	inv := gdInvoice()
+	due := time.Date(2026, 6, 21, 0, 0, 0, 0, time.UTC)
+	inv.PaymentTerms = &due
+
+	out, err := Export(gdTestHeader(), []domain.SalesInvoice{inv}, nil, nil, nil)
+	if err != nil {
+		t.Fatalf("Export: %v", err)
+	}
+	body := decodeWin1252(t, out)
+
+	for _, want := range []string{
+		"<SettlementAmount>3.00</SettlementAmount>",    // doc-level: Σ shares
+		"<PaymentTerms>2026-06-21</PaymentTerms>",      // coexists in the same Settlement
+		"<SettlementAmount>4.84000</SettlementAmount>", // line 1: line-discount-only, 5dp
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("missing %q", want)
+		}
+	}
+	// XSD child order inside Settlement: SettlementAmount before PaymentTerms.
+	si := strings.Index(body, "<SettlementAmount>3.00</SettlementAmount>")
+	pi := strings.Index(body, "<PaymentTerms>2026-06-21</PaymentTerms>")
+	if si == -1 || pi == -1 || si > pi {
+		t.Errorf("Settlement child order wrong: SettlementAmount@%d PaymentTerms@%d", si, pi)
+	}
+}
+
+func TestExport_GlobalDiscountWithoutPaymentTerms(t *testing.T) {
+	inv := gdInvoice() // shares set, PaymentTerms nil
+	out, err := Export(gdTestHeader(), []domain.SalesInvoice{inv}, nil, nil, nil)
+	if err != nil {
+		t.Fatalf("Export: %v", err)
+	}
+	body := decodeWin1252(t, out)
+	if !strings.Contains(body, "<SettlementAmount>3.00</SettlementAmount>") {
+		t.Error("Settlement with SettlementAmount missing when PaymentTerms is nil")
+	}
+}
+
+func TestExport_PaymentTermsOnlySettlementUnchanged(t *testing.T) {
+	inv := minimalSalesInvoice() // no global discount shares
+	due := time.Date(2026, 6, 21, 0, 0, 0, 0, time.UTC)
+	inv.PaymentTerms = &due
+	out, err := Export(gdTestHeader(), []domain.SalesInvoice{inv}, nil, nil, nil)
+	if err != nil {
+		t.Fatalf("Export: %v", err)
+	}
+	body := decodeWin1252(t, out)
+	if !strings.Contains(body, "<PaymentTerms>2026-06-21</PaymentTerms>") {
+		t.Error("PaymentTerms missing")
+	}
+	if strings.Contains(body, "<SettlementAmount>") {
+		t.Error("SettlementAmount emitted for a document without a global discount")
+	}
+}
+
+func TestExport_NoSettlementWithoutDiscountOrTerms(t *testing.T) {
+	inv := minimalSalesInvoice() // neither shares nor PaymentTerms
+	out, err := Export(gdTestHeader(), []domain.SalesInvoice{inv}, nil, nil, nil)
+	if err != nil {
+		t.Fatalf("Export: %v", err)
+	}
+	if strings.Contains(decodeWin1252(t, out), "<Settlement>") {
+		t.Error("Settlement emitted for a document with no discount and no payment terms")
+	}
+}
+
+// TestExport_LineAmountDiscount pins the fixed-amount LINE discount through
+// buildLine — the only end-to-end coverage of that branch since the demo's
+// §5.7 rewrite moved AmountDiscount to the document level.
+func TestExport_LineAmountDiscount(t *testing.T) {
+	inv := minimalSalesInvoice() // 2 × €50.00
+	inv.Lines[0].Discount = must(domain.NewAmountDiscount(must(domain.NewMoney(5.00))))
+
+	out, err := Export(gdTestHeader(), []domain.SalesInvoice{inv}, nil, nil, nil)
+	if err != nil {
+		t.Fatalf("Export: %v", err)
+	}
+	body := decodeWin1252(t, out)
+	for _, want := range []string{
+		"<SettlementAmount>5.00000</SettlementAmount>", // line discount, 5dp
+		"<CreditAmount>95.00000</CreditAmount>",        // 100.00 − 5.00
+		"<UnitPrice>47.50000</UnitPrice>",              // 95.00 / 2
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("missing %q", want)
+		}
+	}
+}
+
+func TestExport_StructureIntact(t *testing.T) {
+	inv := minimalSalesInvoice()
+	hdr := gdTestHeader()
 
 	out, err := Export(hdr, []domain.SalesInvoice{inv}, nil, nil, nil)
 	if err != nil {

@@ -1,9 +1,12 @@
 package domain
 
 import (
+	"cmp"
 	"encoding/json"
 	"fmt"
 	"math"
+	"math/bits"
+	"slices"
 	"strconv"
 )
 
@@ -103,6 +106,42 @@ func roundDiv(num, den int64) int64 {
 		return (num + den/2) / den
 	}
 	return (num - den/2) / den
+}
+
+// prorateCents splits a whole-cent amount across weights proportionally using
+// the largest-remainder method (ties to the lower index). Results are Money
+// (scaled units), each a whole cent, summing to exactly cents*centScale.
+// Whole-cent shares keep Money's integer-cents JSON contract lossless.
+// weights must be non-negative with a positive sum; cents must satisfy
+// cents*centScale <= Σweights (callers derive cents from a discount bounded
+// by the weight sum). 128-bit intermediates: cents×weight overflows int64
+// for documents in the millions of euros.
+func prorateCents(cents int64, weights []Money) []Money {
+	var sum uint64
+	for _, w := range weights {
+		sum += uint64(w)
+	}
+	type rem struct {
+		idx int
+		r   uint64
+	}
+	shares := make([]Money, len(weights))
+	rems := make([]rem, len(weights))
+	allocated := int64(0)
+	for i, w := range weights {
+		hi, lo := bits.Mul64(uint64(cents), uint64(w))
+		q, r := bits.Div64(hi, lo, sum) // hi < sum: cents < 2^64 and w <= sum
+		shares[i] = Money(int64(q) * centScale)
+		allocated += int64(q)
+		rems[i] = rem{i, r}
+	}
+	slices.SortStableFunc(rems, func(a, b rem) int {
+		return cmp.Compare(b.r, a.r) // descending remainder; stable sort keeps lower index first on ties
+	})
+	for k := int64(0); k < cents-allocated; k++ {
+		shares[rems[k].idx] += Money(centScale)
+	}
+	return shares
 }
 
 // Float64 returns the euro value as float64. Lossy; use for display only.

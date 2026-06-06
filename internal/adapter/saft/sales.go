@@ -64,10 +64,14 @@ type xmlCurrency struct {
 	ExchangeRate   string `xml:"ExchangeRate"`
 }
 
-// xmlSettlement holds future payment terms. AT cert §5.7 (round 3348) is
-// explicit that this element must not carry the sum of line discounts.
+// xmlSettlement carries payment terms and the document-level global discount
+// (AT cert §5.7). Round 3348 still applies: SettlementAmount is ONLY the
+// global discount — never the sum of line discounts, which stay on the lines.
+// XSD child order: SettlementDiscount?, SettlementAmount?, SettlementDate?,
+// PaymentTerms?.
 type xmlSettlement struct {
-	PaymentTerms string `xml:"PaymentTerms,omitempty"`
+	SettlementAmount *saftMoney `xml:"SettlementAmount,omitempty"`
+	PaymentTerms     string     `xml:"PaymentTerms,omitempty"`
 }
 
 type xmlFRPayment struct {
@@ -159,8 +163,16 @@ func buildSalesTotals(d domain.SalesInvoice) xmlDocumentTotals {
 		NetTotal:   saftMoney(d.Totals.NetTotal),
 		GrossTotal: saftMoney(d.Totals.GrossTotal),
 	}
+	settle := xmlSettlement{}
+	if gd := globalDiscountTotal(d.Lines); gd > 0 {
+		v := saftMoney(gd)
+		settle.SettlementAmount = &v
+	}
 	if d.PaymentTerms != nil {
-		out.Settlement = []xmlSettlement{{PaymentTerms: fmtDate(*d.PaymentTerms)}}
+		settle.PaymentTerms = fmtDate(*d.PaymentTerms)
+	}
+	if settle != (xmlSettlement{}) {
+		out.Settlement = []xmlSettlement{settle}
 	}
 	if d.Currency != nil {
 		out.Currency = buildCurrency(*d.Currency)
@@ -192,4 +204,15 @@ func buildWithholding(ws []domain.WithholdingTax) []xmlWithholdingTax {
 			WithholdingTaxAmount:      saftMoney(w.Amount),
 		}
 	})
+}
+
+// globalDiscountTotal is the realized document-level discount: Σ of the
+// per-line shares baked at issue time. Derived, never stored — the projector
+// and the domain cannot drift.
+func globalDiscountTotal(lines []domain.DocumentLine) domain.Money {
+	var sum domain.Money
+	for _, l := range lines {
+		sum += l.GlobalDiscountShare
+	}
+	return sum
 }

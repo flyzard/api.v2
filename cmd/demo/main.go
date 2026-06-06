@@ -75,6 +75,7 @@ func main() {
 	scenario513(c, today)
 
 	writeSAFT(c, f, cfg.Software, today)
+	writeDocumentPDFs(c, f, cfg.Software)
 
 	fmt.Println()
 	fmt.Println("Done.")

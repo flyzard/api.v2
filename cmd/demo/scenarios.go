@@ -253,20 +253,23 @@ func scenario56(c *ctx, today time.Time) {
 // ─── 5.7 ────────────────────────────────────────────────────────────────────
 
 func scenario57(c *ctx, today time.Time) {
-	banner("5.7", "Fatura com descontos por linha (Percent + Amount) — AT-compliant")
-	// AT cert §5.7 (round 3348): line discounts must surface as per-line
-	// SettlementAmount, never as a doc-level Settlement. Exercising both
-	// PercentDiscount (line1) and AmountDiscount (line2) to cover both paths.
+	banner("5.7", "Fatura — desconto de linha 8.8% + desconto global (SettlementAmount)")
+	// AT cert §5.7 verbatim: line 1 = qty 100, unit €0.55, 8.8% line discount
+	// (surfaces as the per-line SettlementAmount); plus a global document
+	// discount that generates DocumentTotals/Settlement/SettlementAmount.
+	// Round 3348 still holds: the doc-level element carries only the global
+	// discount, never the sum of line discounts. Letter Nota 1: UnitPrice
+	// (5dp) reflects both discounts.
 	line1 := newLine(c.f.Products["P-NOR"], 100, 0.55, taxNOR(), today)
 	line1.Discount = must(domain.NewPercentDiscount(8.8))
 	line2 := newLine(c.f.Products["P-SERVICE"], 1, 10.00, taxNOR(), today)
-	line2.Discount = must(domain.NewAmountDiscount(must(domain.NewMoney(5.00))))
 
 	draft := c.salesDraft(domain.FT, c.f.CustWithNIF, today, domain.SalesInvoiceFields{}, line1, line2)
+	draft.GlobalDiscount = must(domain.NewAmountDiscount(must(domain.NewMoney(3.00))))
 	due := today.AddDate(0, 0, 30)
 	draft.PaymentTerms = &due
 	doc := c.issueSales(draft, domain.IssueOptions{})
-	printJSON("FT issued (line discounts + PaymentTerms)", doc)
+	printJSON("FT issued (line discount 8.8% + global discount €3.00)", doc)
 	salesSummary("5.7", doc)
 }
 

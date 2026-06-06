@@ -55,21 +55,27 @@ type DocumentLine struct {
 	References      []DocReference   `json:"references,omitempty"`
 	SerialNumbers   []string         `json:"serial_numbers,omitempty"`
 	Discount        Discount         `json:"discount,omitempty"`
-	Tax             LineTax          `json:"tax"`
+	// GlobalDiscountShare is this line's prorated slice of the document-level
+	// GlobalDiscount (sales only), baked at issue time by applyGlobalDiscount.
+	// Whole cents — Money's integer-cents JSON contract must stay lossless.
+	GlobalDiscountShare Money   `json:"global_discount_share,omitempty"`
+	Tax                 LineTax `json:"tax"`
 }
 
 func (l DocumentLine) LineSubtotal() Money {
 	return l.UnitPrice.Mul(l.Quantity)
 }
 
-// LineNetAmount is the post-discount, pre-tax line amount — the value the
+// LineNetAmount is the post-discount, pre-tax line amount — line discount
+// and the line's share of the document-level global discount both applied.
 func (l DocumentLine) LineNetAmount() Money {
-	return applyDiscount(l.Discount, l.LineSubtotal())
+	return applyDiscount(l.Discount, l.LineSubtotal()) - l.GlobalDiscountShare
 }
 
-// LineDiscountAmount is the absolute discount on this line
+// LineDiscountAmount is the absolute line discount, excluding any global
+// discount share (the doc-level Settlement element reports that separately).
 func (l DocumentLine) LineDiscountAmount() Money {
-	return l.LineSubtotal() - l.LineNetAmount()
+	return l.LineSubtotal() - applyDiscount(l.Discount, l.LineSubtotal())
 }
 
 // EffectiveUnitPrice is the post-discount per-unit price
@@ -80,9 +86,9 @@ func (l DocumentLine) EffectiveUnitPrice() Money {
 	return Money(roundDiv(int64(l.LineNetAmount())*scale, int64(l.Quantity)))
 }
 
-// LineTotal = (unit × qty − discount) + tax(after-discount base).
+// LineTotal = (unit × qty − discounts) + tax(after-discount base).
 func (l DocumentLine) LineTotal() Money {
-	afterDiscount := applyDiscount(l.Discount, l.LineSubtotal())
+	afterDiscount := l.LineNetAmount()
 	if l.Tax == nil {
 		return afterDiscount
 	}
@@ -95,6 +101,17 @@ func (l DocumentLine) Validate() error {
 	}
 	if l.UnitPrice < 0 {
 		return fmt.Errorf("negative unit price: %s", l.UnitPrice)
+	}
+	if l.GlobalDiscountShare < 0 {
+		return fmt.Errorf("negative global discount share: %s", l.GlobalDiscountShare)
+	}
+	// Whole cents only: Money's JSON contract is integer cents, so a sub-cent
+	// share would silently truncate on persistence.
+	if l.GlobalDiscountShare%centScale != 0 {
+		return fmt.Errorf("global discount share %s is not a whole cent", l.GlobalDiscountShare)
+	}
+	if max := applyDiscount(l.Discount, l.LineSubtotal()); l.GlobalDiscountShare > max {
+		return fmt.Errorf("global discount share %s exceeds line net %s", l.GlobalDiscountShare, max)
 	}
 	if l.Quantity <= 0 {
 		return fmt.Errorf("non-positive quantity: %d", l.Quantity)

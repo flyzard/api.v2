@@ -40,18 +40,18 @@ M3–M6 are outlined; each expands into its own plan when reached.
 
 **Target:** `/cmd/demo`, `/internal/domain`, `/internal/adapter/saft`.
 
-- [ ] **Step 1: Move** — `mkdir -p internal/adapter cmd/demo` then `mv domain internal/domain` ; `mv saft internal/adapter/saft` ; `mv cmd/*.go cmd/demo/`.
-- [ ] **Step 2: Rewrite imports + format**
+- [x] **Step 1: Move** — `mkdir -p internal/adapter cmd/demo` then `mv domain internal/domain` ; `mv saft internal/adapter/saft` ; `mv cmd/*.go cmd/demo/`. *(Also moved `signing → internal/adapter/signing` and `config → internal/config` — both post-date this plan.)*
+- [x] **Step 2: Rewrite imports + format**
 ```bash
 grep -rl 'invoicing.v2/domain' --include='*.go' . | xargs sed -i '' 's#invoicing.v2/domain#invoicing.v2/internal/domain#g'
 grep -rl 'invoicing.v2/saft'   --include='*.go' . | xargs sed -i '' 's#invoicing.v2/saft#invoicing.v2/internal/adapter/saft#g'
 gofmt -w .
 ```
-- [ ] **Step 3: Grep hardcoded paths** — `grep -rn 'saftpt1.04_01.xsd\|"saft/\|"domain/' --include='*.go' .` ; fix layout-dependent paths.
-- [ ] **Step 4: Review diff** — `git diff`; only import paths should change.
-- [ ] **Step 5: Build + test** — `go build ./... && go test ./...` → green.
-- [ ] **Step 6: Byte-identical** — `go run ./cmd/demo > /dev/null && wc -c out/SAFT-DEMO-2026-05.xml` → `58437`.
-- [ ] **Checkpoint (you commit):** "refactor: move to internal/ layout"
+- [x] **Step 3: Grep hardcoded paths** — `grep -rn 'saftpt1.04_01.xsd\|"saft/\|"domain/' --include='*.go' .` ; fix layout-dependent paths. *(Only hit: a comment in `export_test.go` — no fix needed.)*
+- [x] **Step 4: Review diff** — `git diff`; only import paths should change. *(Verified per-file vs HEAD: import lines only.)*
+- [x] **Step 5: Build + test** — `go build ./... && go test ./...` → green.
+- [x] **Step 6: Byte-identical** — `go run ./cmd/demo > /dev/null && wc -c out/SAFT-DEMO-2026-05.xml` → `59513`. *(Plan's `58437` predates recovery work; baseline re-measured pre-move same session.)*
+- [x] **Checkpoint (you commit):** "refactor: move to internal/ layout"
 
 ---
 

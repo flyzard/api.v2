@@ -112,11 +112,7 @@ func buildStockMovement(d domain.StockMovement, issuerEAC string) xmlStockMoveme
 		MovementStartTime: fmtDateTime(d.MovementStartTime),
 		ATDocCodeID:       d.ATDocCodeID,
 		Lines:             lines,
-		DocumentTotals: xmlSimpleTotals{
-			TaxPayable: saftMoney(d.Totals.TaxTotal + d.Totals.StampDuty),
-			NetTotal:   saftMoney(d.Totals.NetTotal),
-			GrossTotal: saftMoney(d.Totals.GrossTotal),
-		},
+		DocumentTotals:    buildSimpleTotals(d.Totals),
 	}
 	if d.MovementEndTime != nil {
 		out.MovementEndTime = fmtDateTime(*d.MovementEndTime)

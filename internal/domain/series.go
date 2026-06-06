@@ -42,31 +42,19 @@ type Series struct {
 	ProcessingMeans ProcessingMeans `json:"processing_means"`
 }
 
-var seriesCharset = regexp.MustCompile(`^[A-Za-z0-9._\-/]+$`)
+var seriesCharset = regexp.MustCompile(`^[A-Za-z0-9]+(?:[._\-/][A-Za-z0-9]+)*$`)
 
 func ValidateSeries(id string) error {
 	if n := len(id); n < 1 || n > 20 {
 		return fmt.Errorf("series id length must be 1-20: %q", id)
 	}
 	if !seriesCharset.MatchString(id) {
-		return fmt.Errorf("series id has invalid characters: %q", id)
+		return fmt.Errorf("series id is invalid (allowed: alphanumerics separated by single . _ - /): %q", id)
 	}
 	if len(id) >= 2 && strings.EqualFold(id[:2], "AT") {
 		return fmt.Errorf("series id cannot start with AT: %q", id)
 	}
-	if isSeriesSep(id[0]) || isSeriesSep(id[len(id)-1]) {
-		return fmt.Errorf("series id cannot start or end with separator: %q", id)
-	}
-	for i := 1; i < len(id); i++ {
-		if isSeriesSep(id[i]) && isSeriesSep(id[i-1]) {
-			return fmt.Errorf("series id has consecutive separators: %q", id)
-		}
-	}
 	return nil
-}
-
-func isSeriesSep(c byte) bool {
-	return c == '.' || c == '_' || c == '-' || c == '/'
 }
 
 func NewSeries(id string, docType DocumentType) (Series, error) {

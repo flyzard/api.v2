@@ -13,19 +13,14 @@ import (
 // buildStockMovement assembles the maroto document for GT/GR/GA/GC/GD.
 // Prints transport places/times and the AT-assigned code (ATDocCodeID) the
 // carrier must present; always "Este documento não serve de fatura".
-func buildStockMovement(sm domain.StockMovement, m Meta) (core.Maroto, error) {
-	if err := m.validate(); err != nil {
-		return nil, err
-	}
+// footerATCUD: see legalFooterRows.
+func buildStockMovement(sm domain.StockMovement, m Meta, footerATCUD bool) (core.Maroto, error) {
 	if sm.QRPayload == "" {
 		return nil, ErrMissingQRPayload
 	}
-	eng, err := newEngine()
-	if err != nil {
-		return nil, err
-	}
 	id := docIdentity{Type: sm.DocumentType, Number: sm.Number, Date: sm.Date}
-	if err := eng.RegisterHeader(headerRows(m, id, sm.Customer)...); err != nil {
+	eng, err := newDocEngine(m, id, sm.Customer, sm.ATCUD, sm.Hash, footerATCUD)
+	if err != nil {
 		return nil, err
 	}
 	if sm.Status == domain.StatusCancelled {
@@ -37,18 +32,19 @@ func buildStockMovement(sm domain.StockMovement, m Meta) (core.Maroto, error) {
 	}
 	eng.AddRows(shippingRows(sm.ShipFrom, sm.ShipTo, &sm.MovementStartTime, sm.MovementEndTime)...)
 	eng.AddRows(linesTable(sm.Lines)...)
-	eng.AddRows(taxSummaryRows(sm.Totals.Breakdown)...)
-	eng.AddRows(totalsRows(sm.Totals, nil)...)
-	footer, err := legalFooterRows(sm.ATCUD, sm.QRPayload, sm.Hash, m.CertNumber,
-		notInvoiceMention(sm.DocumentType))
+	eng.AddRows(summaryAndTotalsRows(sm.Totals.Breakdown, sm.Lines,
+		salesTotals(sm.Totals, nil, sm.Lines))...)
+	qr, err := qrRows(sm.ATCUD, sm.QRPayload)
 	if err != nil {
 		return nil, err
 	}
-	eng.AddRows(footer...)
+	eng.AddRows(qr...)
 	return eng, nil
 }
 
 // RenderStockMovement renders an issued transport document as PDF bytes.
 func RenderStockMovement(sm domain.StockMovement, m Meta) ([]byte, error) {
-	return render(buildStockMovement(sm, m))
+	return renderAdaptive(func(footerATCUD bool) (core.Maroto, error) {
+		return buildStockMovement(sm, m, footerATCUD)
+	})
 }

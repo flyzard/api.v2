@@ -4,8 +4,6 @@ import (
 	"context"
 	"encoding/xml"
 	"fmt"
-	"log/slog"
-	"strconv"
 
 	"github.com/flyzard/invoicing.v2/internal/domain"
 )
@@ -179,54 +177,29 @@ func (c *Client) CommunicateTransport(ctx context.Context, company domain.Compan
 	if c.config.TransportURL == "" {
 		return nil, fmt.Errorf("at.Config: TransportURL required for CommunicateTransport")
 	}
-	ctx, cancel := c.ensureDeadline(ctx)
-	defer cancel()
-	return retryable(ctx, c.logger, c.config.Retry, "CommunicateTransport", func() (*TransportResult, error) {
-		return c.communicateTransportOnce(ctx, company, mv)
-	})
-}
-
-func (c *Client) communicateTransportOnce(ctx context.Context, company domain.Company, mv domain.StockMovement) (*TransportResult, error) {
-	creds, err := c.prepareCredentials()
-	if err != nil {
-		return nil, err
-	}
-	envelope, err := buildTransportEnvelope(creds, company, mv)
-	if err != nil {
-		return nil, fmt.Errorf("building SOAP envelope: %w", err)
-	}
-	respBody, err := c.sendSOAPRequest(ctx, "CommunicateTransport", c.config.TransportURL, envelope)
-	if err != nil {
-		return nil, err
-	}
-
-	var resp transportDocResponse
-	if err := parseSOAPResponse(respBody, &resp); err != nil {
-		return nil, err
-	}
-
-	var lastMessage string
-	for _, status := range resp.ResponseStatus {
-		// keep the latest message; AT sends one status block in practice
-		lastMessage = status.ReturnMessage
-		if status.ReturnCode != 0 {
-			atErr := Error{Code: strconv.Itoa(status.ReturnCode), Message: status.ReturnMessage}
-			c.logger.WarnContext(ctx, "AT returned error",
-				slog.String("operation", "CommunicateTransport"),
-				slog.String("code", atErr.Code),
-				slog.String("message", atErr.Message))
-			return nil, atErr
-		}
-	}
-	// Cancellations (MovementStatus=A) void an already-communicated document;
-	// AT returns no new ATDocCodeID for them.
-	if mv.Status != domain.StatusCancelled && resp.ATDocCodeID == "" {
-		return nil, Error{Code: "MISSING_ATDOCCODE", Message: "AT accepted the transport document but returned no ATDocCodeID"}
-	}
-	return &TransportResult{
-		ATDocCodeID:    resp.ATDocCodeID,
-		DocumentNumber: resp.DocumentNumber,
-		ATCUD:          resp.ATCUD,
-		Message:        lastMessage,
-	}, nil
+	return soapCall(c, ctx, "CommunicateTransport", c.config.TransportURL,
+		func(creds soapCredentials) ([]byte, error) {
+			return buildTransportEnvelope(creds, company, mv)
+		},
+		func(ctx context.Context, resp *transportDocResponse) (*TransportResult, error) {
+			var lastMessage string
+			for _, status := range resp.ResponseStatus {
+				// keep the latest message; AT sends one status block in practice
+				lastMessage = status.ReturnMessage
+				if status.ReturnCode != 0 {
+					return nil, c.atError(ctx, "CommunicateTransport", status.ReturnCode, status.ReturnMessage)
+				}
+			}
+			// Cancellations (MovementStatus=A) void an already-communicated document;
+			// AT returns no new ATDocCodeID for them.
+			if mv.Status != domain.StatusCancelled && resp.ATDocCodeID == "" {
+				return nil, Error{Code: "MISSING_ATDOCCODE", Message: "AT accepted the transport document but returned no ATDocCodeID"}
+			}
+			return &TransportResult{
+				ATDocCodeID:    resp.ATDocCodeID,
+				DocumentNumber: resp.DocumentNumber,
+				ATCUD:          resp.ATCUD,
+				Message:        lastMessage,
+			}, nil
+		})
 }

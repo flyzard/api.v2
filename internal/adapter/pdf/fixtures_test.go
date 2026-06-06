@@ -35,6 +35,15 @@ func mustPercent(t *testing.T, v float64) domain.Percent {
 	return p
 }
 
+func mustRate(t *testing.T, rate float64) domain.ExchangeRate {
+	t.Helper()
+	r, err := domain.NewExchangeRate(rate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return r
+}
+
 func fixtureCustomer() domain.Customer {
 	return domain.Customer{
 		CustomerID:    uuid.MustParse("11111111-1111-1111-1111-111111111111"),

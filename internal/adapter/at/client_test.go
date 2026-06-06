@@ -222,6 +222,64 @@ func TestGetSeriesStatus(t *testing.T) {
 	}
 }
 
+// TestRegisterSeriesReconcilesAlreadyRegistered pins the lost-response
+// recovery: registarSerie is not idempotent, so a committed-but-unacknowledged
+// registration makes the retry fail with "série já registada" (4xxx). The
+// client must then consult the series and, finding it registered, return its
+// state as success — mirroring NullClient's idempotent RegisterSeries.
+func TestRegisterSeriesReconcilesAlreadyRegistered(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", "text/xml; charset=utf-8")
+		if strings.Contains(string(b), "consultarSeries") {
+			_, _ = w.Write([]byte(statusOKResponse))
+			return
+		}
+		_, _ = w.Write([]byte(atErrorResponse)) // 4001 "Serie ja registada."
+	}))
+	defer srv.Close()
+
+	res, err := testClient(t, srv.URL).RegisterSeries(context.Background(), SeriesRegistration{
+		SeriesID: "S2026", DocType: domain.FT, SeriesType: "N", InitialSeq: 1, ExpectedStartDate: atT0,
+	})
+	if err != nil {
+		t.Fatalf("RegisterSeries: %v, want reconciled success", err)
+	}
+	if res.ValidationCode != "BCDFGH37" {
+		t.Errorf("ValidationCode = %q, want BCDFGH37 (recovered from consultarSeries)", res.ValidationCode)
+	}
+	if res.Status != domain.SeriesActive {
+		t.Errorf("Status = %s, want %s", res.Status, domain.SeriesActive)
+	}
+	if got := res.RegistrationDate.Format("2006-01-02"); got != "2026-06-04" {
+		t.Errorf("RegistrationDate = %s, want 2026-06-04 (from consult dataRegisto)", got)
+	}
+}
+
+// TestRegisterSeriesReconcileMissesKeepsOriginalError pins the fall-through:
+// when the consult finds a DIFFERENT series (or none), the original register
+// error must surface, not a reconciled success or the consult's own error.
+func TestRegisterSeriesReconcileMissesKeepsOriginalError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", "text/xml; charset=utf-8")
+		if strings.Contains(string(b), "consultarSeries") {
+			_, _ = w.Write([]byte(statusOKResponse)) // echoes serie S2026 only
+			return
+		}
+		_, _ = w.Write([]byte(atErrorResponse))
+	}))
+	defer srv.Close()
+
+	_, err := testClient(t, srv.URL).RegisterSeries(context.Background(), SeriesRegistration{
+		SeriesID: "OTHER", DocType: domain.FT, SeriesType: "N", InitialSeq: 1, ExpectedStartDate: atT0,
+	})
+	atErr, ok := err.(Error)
+	if !ok || atErr.Code != "4001" {
+		t.Fatalf("err = %v, want original at.Error 4001", err)
+	}
+}
+
 func TestHTTPErrorBecomesATError(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)

@@ -14,7 +14,7 @@ Go library. Issue Portuguese (AT-certified) tax documents, export as SAF-T (PT) 
 go build ./...                                  # build
 go test ./...                                   # all tests
 go test ./internal/domain -run TestName -v      # single test
-go run ./cmd/demo                               # AT certification §5.1–5.13 walkthrough; writes out/SAFT-DEMO-2026-05.xml
+go run ./cmd/demo                               # AT certification walkthrough (Apr prologue + §5.1–5.13); writes out/ SAF-T, per-document PDFs, CHECKLIST.txt
 go run ./cmd/atsmoke                            # live smoke vs AT *test* webservices; needs AT_NIF/AT_USERNAME/AT_PASSWORD + certs (see cmd/atsmoke/main.go doc comment)
 ```
 

@@ -13,17 +13,11 @@ import (
 
 // buildPayment assembles the maroto document for RC/RG receipts.
 // Receipts carry no Hash and no QRPayload (domain decision — see spec):
-// the legal footer prints ATCUD + the certified-software mention only.
+// no QR block, so the footer is the ATCUD's only home and always prints it.
 func buildPayment(p domain.Payment, m Meta) (core.Maroto, error) {
-	if err := m.validate(); err != nil {
-		return nil, err
-	}
-	eng, err := newEngine()
-	if err != nil {
-		return nil, err
-	}
 	id := docIdentity{Type: p.Type, Number: p.Number, Date: p.TransactionDate}
-	if err := eng.RegisterHeader(headerRows(m, id, p.Customer)...); err != nil {
+	eng, err := newDocEngine(m, id, p.Customer, p.ATCUD, "", true)
+	if err != nil {
 		return nil, err
 	}
 	if p.Status == domain.StatusCancelled {
@@ -33,28 +27,22 @@ func buildPayment(p domain.Payment, m Meta) (core.Maroto, error) {
 	for _, meth := range p.Methods {
 		eng.AddRows(row.New(4).Add(text.NewCol(12,
 			fmt.Sprintf("Meio de pagamento: %s · %s · %s",
-				string(meth.Mechanism), fmtEUR(meth.Amount), fmtDate(meth.Date)),
-			props.Text{Size: 7})))
+				mechanismLabel(meth.Mechanism), fmtEUR(meth.Amount), fmtDate(meth.Date)),
+			props.Text{Size: 7, Color: gray})))
 	}
-	eng.AddRows(paymentTotalsRows(p)...)
+	eng.AddRows(summaryAndTotalsRows(nil, nil, paymentTotals(p))...)
 	eng.AddRows(currencyRows(p.Currency)...)
-	footer, err := legalFooterRows(p.ATCUD, "", "", m.CertNumber,
-		notInvoiceMention(p.Type))
-	if err != nil {
-		return nil, err
-	}
-	eng.AddRows(footer...)
 	return eng, nil
 }
 
 // paymentLinesTable lists the settled source documents.
 func paymentLinesTable(lines []domain.PaymentLine) []core.Row {
 	rows := []core.Row{
-		row.New(6).Add(
+		row.New(6.5).Add(
 			text.NewCol(6, "Documento", tableHdr),
 			text.NewCol(3, "Data", tableRightHdr),
 			text.NewCol(3, "Valor", tableRightHdr),
-		),
+		).WithStyle(tableHdrStyle),
 	}
 	for _, l := range lines {
 		amount := ""
@@ -73,23 +61,27 @@ func paymentLinesTable(lines []domain.PaymentLine) []core.Row {
 	return rows
 }
 
-// paymentTotalsRows prints the receipt totals; withholding reduces the
-// derived "Total recebido" (PaymentTotals carries no AmountPayable).
-func paymentTotalsRows(p domain.Payment) []core.Row {
-	rows := []core.Row{
-		totalLine("Total líquido", fmtEUR(p.NetTotal), false),
-		totalLine("Total IVA", fmtEUR(p.TaxPayable), false),
-		totalLine("Total", fmtEUR(p.GrossTotal), true),
+// paymentTotals lists the receipt totals; withholding reduces the derived
+// "Total recebido" (PaymentTotals carries no AmountPayable). Zero-amount
+// retention entries are skipped — a "-0,00 €" row says nothing.
+func paymentTotals(p domain.Payment) []totalEntry {
+	entries := []totalEntry{
+		{"Total líquido", fmtEUR(p.NetTotal), false},
+		{"Total IVA", fmtEUR(p.TaxPayable), false},
+		{"Total", fmtEUR(p.GrossTotal), true},
 	}
 	var withheld domain.Money
 	for _, w := range p.WithholdingTax {
-		rows = append(rows, totalLine(withholdingLabel(w), "-"+fmtEUR(w.Amount), false))
+		if w.Amount == 0 {
+			continue
+		}
+		entries = append(entries, totalEntry{withholdingLabel(w), "-" + fmtEUR(w.Amount), false})
 		withheld += w.Amount
 	}
 	if withheld != 0 {
-		rows = append(rows, totalLine("Total recebido", fmtEUR(p.GrossTotal.Sub(withheld)), true))
+		entries = append(entries, totalEntry{"Total recebido", fmtEUR(p.GrossTotal.Sub(withheld)), true})
 	}
-	return rows
+	return entries
 }
 
 // RenderPayment renders an issued RC/RG receipt as PDF bytes.

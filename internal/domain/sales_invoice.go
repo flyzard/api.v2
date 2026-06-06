@@ -293,10 +293,10 @@ func (d *DraftSalesInvoice) applyGlobalDiscount() {
 	}
 }
 
-// CalculateTotals shadows the embedded method so pre-issue callers that read
-// draft.Totals (currency blocks, FR payment sums) see post-global-discount
-// values. issueCommon calls the embedded method directly — shares are already
-// baked on the lines by then, so both paths agree.
+// CalculateTotals shadows the embedded method so every totals computation —
+// pre-issue callers reading draft.Totals (currency blocks, FR payment sums)
+// and issueCommon's recompute (dispatched here via totalsCalculator) — bakes
+// the global-discount shares first.
 func (d *DraftSalesInvoice) CalculateTotals() {
 	d.applyGlobalDiscount()
 	d.CommonDraftDocument.CalculateTotals()
@@ -306,16 +306,15 @@ func IssueSalesInvoice(draft *DraftSalesInvoice, series *Series, signer Signer, 
 	if err := draft.Validate(); err != nil {
 		return SalesInvoice{}, fmt.Errorf("draft: %w", err)
 	}
-	// Bake global-discount shares onto the lines before issueCommon: it
-	// recalculates totals on the embedded CommonDraftDocument, where the
-	// CalculateTotals shadow does not apply. Idempotent — FS/FR branches
-	// re-bake via the shadow without drift.
-	draft.applyGlobalDiscount()
 	// Mirrors IssuePayment: the FX rate must be dated on the invoice date so it
 	// cannot drift between draft prep and issuance (SalesInvoiceFields.Currency contract).
 	if draft.Currency != nil {
 		date := draft.Date.In(lisbonLocation)
-		if !dateOnly(draft.Currency.Date).Equal(dateOnly(date)) {
+		// Normalize the rate date to Lisbon too: dateOnly keeps its operand's
+		// location and time.Equal compares instants, so a UTC-located rate date
+		// would otherwise fail on the same calendar day whenever Lisbon is on
+		// summer time.
+		if !dateOnly(draft.Currency.Date.In(lisbonLocation)).Equal(dateOnly(date)) {
 			return SalesInvoice{}, fmt.Errorf("currency rate date %s does not match invoice date %s",
 				draft.Currency.Date.Format("2006-01-02"), date.Format("2006-01-02"))
 		}
@@ -353,7 +352,10 @@ func IssueSalesInvoice(draft *DraftSalesInvoice, series *Series, signer Signer, 
 				sum.Format2DP(), draft.Totals.GrossTotal.Format2DP())
 		}
 	}
-	issued, err := issueCommon(&draft.CommonDraftDocument, series, signer, sourceID, now, opts)
+	// draft (not the embedded struct) is the totalsCalculator: issueCommon's
+	// totals recompute dispatches to the CalculateTotals override, which bakes
+	// the global-discount shares before the canonical string is signed.
+	issued, err := issueCommon(&draft.CommonDraftDocument, draft, series, signer, sourceID, now, opts)
 	if err != nil {
 		return SalesInvoice{}, err
 	}

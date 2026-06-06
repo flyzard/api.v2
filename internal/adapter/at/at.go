@@ -23,12 +23,14 @@ type Error struct {
 
 func (e Error) Error() string { return fmt.Sprintf("AT error %s: %s", e.Code, e.Message) }
 
-// IsRetryable reports whether the error might succeed on retry.
+// IsRetryable reports whether the error might succeed on retry. The set is
+// exactly what the client produces for transient failures: "CONNECTION"
+// (sendSOAPRequest wraps every transport-level error, including timeouts) and
+// gateway statuses 502/503/504. AT operation codes (3xxx+) are deterministic
+// business errors — never retried.
 func (e Error) IsRetryable() bool {
 	switch e.Code {
-	case "TIMEOUT", "UNAVAILABLE", "BUSY", "CONNECTION",
-		"HTTP_502", "HTTP_503", "HTTP_504",
-		"9999":
+	case "CONNECTION", "HTTP_502", "HTTP_503", "HTTP_504":
 		return true
 	}
 	return false
@@ -94,11 +96,12 @@ type SeriesRegistrationResult struct {
 
 // SeriesStatus is AT's answer to consultarSeries.
 type SeriesStatus struct {
-	SeriesID       string
-	DocType        domain.DocumentType
-	ValidationCode string
-	Status         domain.SeriesATStatus
-	LastSeq        int
+	SeriesID         string
+	DocType          domain.DocumentType
+	ValidationCode   string
+	Status           domain.SeriesATStatus
+	LastSeq          int
+	RegistrationDate time.Time // consultarSeries dataRegisto
 }
 
 // RegistrationFor derives the registarSerie request from a series that has

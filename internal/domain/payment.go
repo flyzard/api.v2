@@ -53,8 +53,11 @@ func (m PaymentMethod) Validate() error {
 	if m.Mechanism != "" && !m.Mechanism.IsValid() {
 		return fmt.Errorf("invalid payment mechanism: %s", m.Mechanism)
 	}
-	if m.Amount < 0 {
-		return fmt.Errorf("negative payment amount: %s", m.Amount)
+	// Positive like FRPayment: a settlement row that moves no money is
+	// meaningless. Mechanism stays optional here (XSD minOccurs=0 on receipts)
+	// unlike FR rows, which must state how the invoice was paid.
+	if m.Amount <= 0 {
+		return fmt.Errorf("payment amount must be positive: %s", m.Amount)
 	}
 	if m.Date.IsZero() {
 		return fmt.Errorf("payment date is required")
@@ -188,8 +191,8 @@ func (l *PaymentLine) UnmarshalJSON(data []byte) error {
 }
 
 func (l PaymentLine) Validate() error {
-	if l.LineNumber < 0 {
-		return fmt.Errorf("negative line number: %d", l.LineNumber)
+	if l.LineNumber < 1 {
+		return fmt.Errorf("line number must be >= 1, got %d", l.LineNumber)
 	}
 	if len(l.SourceDocuments) == 0 {
 		return fmt.Errorf("at least one source_document required")
@@ -280,10 +283,17 @@ func (d *PaymentDraft) Validate() error {
 		}
 	}
 	hasM16 := false
+	// LineNumber collisions, like the sales family (CommonDraftDocument.Validate):
+	// the projector copies LineNumber verbatim, so duplicates would reach the XML.
+	seen := make(map[int]struct{}, len(d.Lines))
 	for i, line := range d.Lines {
 		if err := line.Validate(); err != nil {
 			return fmt.Errorf("line %d: %w", i, err)
 		}
+		if _, dup := seen[line.LineNumber]; dup {
+			return fmt.Errorf("line %d: duplicate LineNumber %d", i, line.LineNumber)
+		}
+		seen[line.LineNumber] = struct{}{}
 		// XSD assert: Cash-VAT receipts (RC) require every line to carry Tax.
 		if d.Type == RC && line.Tax == nil {
 			return fmt.Errorf("line %d: RC requires Tax on every line", i)
@@ -329,7 +339,9 @@ func IssuePayment(draft *PaymentDraft, series *Series, now time.Time, totals Pay
 	recovering := sourcePayment == SourceBillingManual
 	txDate := draft.TransactionDate.In(lisbonLocation)
 	sysEntry := now.In(lisbonLocation)
-	if draft.Currency != nil && !dateOnly(draft.Currency.Date).Equal(dateOnly(txDate)) {
+	// Rate date normalized to Lisbon like txDate — see the matching guard in
+	// IssueSalesInvoice for why mixed locations break dateOnly comparison.
+	if draft.Currency != nil && !dateOnly(draft.Currency.Date.In(lisbonLocation)).Equal(dateOnly(txDate)) {
 		return Payment{}, fmt.Errorf("currency rate date %s does not match transaction date %s",
 			draft.Currency.Date.Format("2006-01-02"), txDate.Format("2006-01-02"))
 	}

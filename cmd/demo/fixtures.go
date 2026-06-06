@@ -80,7 +80,7 @@ func buildFixtures(now time.Time) *fixtures {
 	doctypes := []domain.DocumentType{
 		domain.FT, domain.FS, domain.FR, domain.NC, domain.ND,
 		domain.GR, domain.GT, domain.GA, domain.GC, domain.GD,
-		domain.OR, domain.PF, domain.NE, domain.CM, domain.FC, domain.FO,
+		domain.OR, domain.PF, domain.NE, domain.CM, domain.FC, domain.FO, domain.OU,
 		domain.RC, domain.RG,
 	}
 	for i, dt := range doctypes {

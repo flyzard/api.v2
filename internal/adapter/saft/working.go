@@ -73,11 +73,7 @@ func buildWorkDocument(d domain.WorkDocument, issuerEAC string) xmlWorkDocument 
 		SystemEntryDate: fmtDateTime(d.SystemEntryDate),
 		CustomerID:      saftCustomerID(d.Customer.CustomerID),
 		Lines:           lines,
-		DocumentTotals: xmlSimpleTotals{
-			TaxPayable: saftMoney(d.Totals.TaxTotal + d.Totals.StampDuty),
-			NetTotal:   saftMoney(d.Totals.NetTotal),
-			GrossTotal: saftMoney(d.Totals.GrossTotal),
-		},
+		DocumentTotals:  buildSimpleTotals(d.Totals),
 	}
 }
 

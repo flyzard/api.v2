@@ -87,6 +87,12 @@ func (d *CommonDraftDocument) Validate() error {
 		if rules.RequiresLineTax && line.Tax == nil {
 			return fmt.Errorf("line %d: %s requires Tax on every line", i, d.DocumentType)
 		}
+		// GlobalDiscountShare is baked only by DraftSalesInvoice; on any other
+		// family a non-zero share is a stray value that would silently lower
+		// the line net.
+		if rules.Family != familySales && line.GlobalDiscountShare != 0 {
+			return fmt.Errorf("line %d: %s cannot carry a global discount share (sales-only)", i, d.DocumentType)
+		}
 		if !rules.AllowsStamp {
 			if _, isStamp := line.Tax.(StampTax); isStamp {
 				return fmt.Errorf("line %d: stamp duty not allowed on %s", i, d.DocumentType)

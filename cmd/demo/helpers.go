@@ -5,10 +5,13 @@ import (
 	"fmt"
 	"log"
 	"maps"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"time"
 
+	"github.com/flyzard/invoicing.v2/internal/adapter/pdf"
 	"github.com/flyzard/invoicing.v2/internal/domain"
 )
 
@@ -108,7 +111,27 @@ func summary(line string) {
 	fmt.Printf("→ %s\n", line)
 }
 
+// checklist accumulates one row per issued document so the demo can emit the
+// "ponto → documento → PDF" map the certification letter asks for (Nota 2).
+var checklist []string
+
+func recordChecklist(point string, n domain.DocNumber) {
+	checklist = append(checklist, fmt.Sprintf("%-28s %-22s %s", point, n.Format(), pdfName(n, pdf.Original)))
+}
+
+// writeChecklist writes out/CHECKLIST.txt mapping every checklist point to
+// the issued document and the PDF file rendered for it.
+func writeChecklist() {
+	body := "AT certification §5 — ponto → documento → PDF\n\n" + strings.Join(checklist, "\n") + "\n"
+	path := filepath.Join("out", "CHECKLIST.txt")
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		log.Fatalf("write %s: %v", path, err)
+	}
+	fmt.Printf("Checklist written: %s (%d rows)\n", path, len(checklist))
+}
+
 func salesSummary(prefix string, doc domain.SalesInvoice) {
+	recordChecklist(prefix, doc.Number)
 	summary(fmt.Sprintf("%s · %s · ATCUD %s · NET %s · TAX %s · GROSS %s",
 		prefix,
 		doc.Number.Format(),
@@ -120,16 +143,19 @@ func salesSummary(prefix string, doc domain.SalesInvoice) {
 }
 
 func workSummary(prefix string, doc domain.WorkDocument) {
+	recordChecklist(prefix, doc.Number)
 	summary(fmt.Sprintf("%s · %s · ATCUD %s · GROSS %s",
 		prefix, doc.Number.Format(), doc.ATCUD, doc.Totals.GrossTotal.Format2DP()))
 }
 
 func stockSummary(prefix string, doc domain.StockMovement) {
+	recordChecklist(prefix, doc.Number)
 	summary(fmt.Sprintf("%s · %s · ATCUD %s · GROSS %s",
 		prefix, doc.Number.Format(), doc.ATCUD, doc.Totals.GrossTotal.Format2DP()))
 }
 
 func paymentSummary(prefix string, doc domain.Payment) {
+	recordChecklist(prefix, doc.Number)
 	summary(fmt.Sprintf("%s · %s · ATCUD %s · GROSS %s",
 		prefix, doc.Number.Format(), doc.ATCUD, doc.PaymentTotals.GrossTotal.Format2DP()))
 }

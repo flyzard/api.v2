@@ -118,7 +118,10 @@ func buildMasterFiles(sales []domain.SalesInvoice, stock []domain.StockMovement,
 	}
 
 	return xmlMasterFiles{
-		Customers: sortedValues(custs, func(c xmlCustomer) string { return c.AccountID }),
+		// Sort by CustomerID — the dedup key and the only unique one. AccountID
+		// is a GL account ("Desconhecido" et al.) shared across customers, so
+		// sorting on it left equal keys in map-iteration order (nondeterministic bytes).
+		Customers: sortedValues(custs, func(c xmlCustomer) string { return c.CustomerID }),
 		Products:  sortedValues(prods, func(p xmlProduct) string { return p.ProductCode }),
 		TaxTable:  buildTaxTable(rates),
 	}, nil
@@ -199,7 +202,7 @@ func buildTaxTable(rates map[taxKey]domain.Percent) xmlTaxTable {
 	out := make([]xmlTaxEntry, 0, len(rates))
 	for k, pct := range rates {
 		out = append(out, xmlTaxEntry{
-			TaxType:          "IVA",
+			TaxType:          taxTypeVAT,
 			TaxCountryRegion: string(k.Region),
 			TaxCode:          string(k.Category),
 			Description:      taxCategoryDescription[k.Category],

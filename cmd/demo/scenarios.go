@@ -134,6 +134,38 @@ func mustShip(detail, city, zip string) *domain.ShippingPoint {
 	return &domain.ShippingPoint{Address: &addr}
 }
 
+// ─── Mês anterior ───────────────────────────────────────────────────────────
+
+// scenarioPrevMonth issues one April document per family that carries a
+// monthly period in SAF-T — SalesInvoices (4.1.4.5), MovementOfGoods
+// (4.2.3.5) and WorkingDocuments (4.3.4.5) — so the export and the printed
+// PDFs span two different months, as the certification letter requires.
+// Each is the first document of its series: the May documents continue the
+// same hash chain across the month boundary.
+func scenarioPrevMonth(c *ctx, today time.Time) {
+	banner("Mês anterior", "Documentos de abril — o extrato abrange dois meses")
+
+	ft := c.salesDraft(domain.FT, c.f.CustWithNIF, today, domain.SalesInvoiceFields{},
+		newLine(c.f.Products["P-NOR"], 2, 30.00, taxNOR(), today),
+	)
+	ftDoc := c.issueSales(ft, domain.IssueOptions{})
+	salesSummary("Mês anterior · FT", ftDoc)
+
+	from := mustShip("Polo Logístico Sul", "Setúbal", "2900-100")
+	to := mustShip("Rua das Flores 12", "Lisboa", "1000-001")
+	gr := c.stockDraft(domain.GR, c.f.CustWithNIF, today, from, to, c.clock.Now().Add(2*time.Hour),
+		newLine(c.f.Products["P-CRATE"], 2, 15.00, taxNOR(), today),
+	)
+	grDoc := c.issueStock(gr, domain.IssueOptions{})
+	stockSummary("Mês anterior · GR", grDoc)
+
+	ne := c.workDraft(domain.NE, c.f.CustWithNIF, today,
+		newLine(c.f.Products["P-SERVICE"], 2, 75.00, taxNOR(), today),
+	)
+	neDoc := c.issueWork(ne, domain.IssueOptions{})
+	workSummary("Mês anterior · NE", neDoc)
+}
+
 // ─── 5.1 ────────────────────────────────────────────────────────────────────
 
 func scenario51(c *ctx, today time.Time) {
@@ -371,6 +403,7 @@ func scenario513(c *ctx, today time.Time) {
 	c.scenario513Working(domain.CM, "Consulta de mesa", today)
 	c.scenario513Working(domain.FC, "Documento de consignação", today)
 	c.scenario513Working(domain.FO, "Folha de obra", today)
+	c.scenario513Working(domain.OU, "Outros", today)
 	c.scenario513RC(today)
 	c.scenario513RG(today)
 }

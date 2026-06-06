@@ -223,10 +223,19 @@ func nextDocIdentity(series *Series, docType DocumentType) (int, DocNumber, ATCU
 	return seq, number, atcud, nil
 }
 
+// totalsCalculator lets a family draft hook its own totals computation into
+// issueCommon: DraftSalesInvoice's override bakes global-discount shares onto
+// the lines before delegating; the other families pass the embedded
+// CommonDraftDocument. Dispatching through this interface (instead of calling
+// the embedded method) guarantees the signed GrossTotal is computed on
+// fully-prepared lines — Go method shadowing does not reach through an
+// embedded-struct call.
+type totalsCalculator interface{ CalculateTotals() }
+
 // issueCommon advances the series counter and produces a signed IssuedDocument.
 // Caller MUST have run draft.Validate() — not re-checked here so lines validate once.
 // On error the series is untouched. Caller MUST serialize per Series.ID inside a transaction.
-func issueCommon(draft *CommonDraftDocument, series *Series, signer Signer, sourceID string, now time.Time, opts IssueOptions) (IssuedDocument, error) {
+func issueCommon(draft *CommonDraftDocument, calc totalsCalculator, series *Series, signer Signer, sourceID string, now time.Time, opts IssueOptions) (IssuedDocument, error) {
 	sourceBilling, err := opts.resolveSourceBilling()
 	if err != nil {
 		return IssuedDocument{}, err
@@ -265,7 +274,7 @@ func issueCommon(draft *CommonDraftDocument, series *Series, signer Signer, sour
 		}
 	}
 
-	draft.CalculateTotals()
+	calc.CalculateTotals()
 
 	seq, number, atcud, err := nextDocIdentity(series, draft.DocumentType)
 	if err != nil {

@@ -1,6 +1,34 @@
 package domain
 
-import "testing"
+import (
+	"encoding/json"
+	"testing"
+)
+
+// TestMoneyMarshalJSONRoundsLikeFormat2DP pins MarshalJSON to the same
+// half-away-from-zero cent rounding Format2DP uses for the canonical string
+// and QR. Sub-cent totals (e.g. €33.33 × 23% VAT = 766590 scaled = 766.59¢)
+// must persist as the value that is signed and printed, not truncate.
+func TestMoneyMarshalJSONRoundsLikeFormat2DP(t *testing.T) {
+	cases := []struct {
+		scaled Money
+		want   string
+	}{
+		{766590, "767"},   // 766.59¢ rounds up, truncation gave 766
+		{766490, "766"},   // below half rounds down
+		{-766590, "-767"}, // half-away-from-zero on negatives
+		{4950000, "4950"}, // whole cents unchanged (€49.50)
+	}
+	for _, c := range cases {
+		got, err := json.Marshal(c.scaled)
+		if err != nil {
+			t.Fatalf("Marshal(%d): %v", c.scaled, err)
+		}
+		if string(got) != c.want {
+			t.Errorf("Marshal(%d) = %s, want %s (Format2DP=%s)", c.scaled, got, c.want, c.scaled.Format2DP())
+		}
+	}
+}
 
 func TestHashFourChars(t *testing.T) {
 	// 40-char synthetic hash: positions 1,11,21,31 hold A,B,C,D.

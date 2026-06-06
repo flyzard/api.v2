@@ -4,8 +4,6 @@ import (
 	"context"
 	"encoding/xml"
 	"fmt"
-	"log/slog"
-	"strconv"
 	"time"
 
 	"github.com/flyzard/invoicing.v2/internal/domain"
@@ -274,49 +272,20 @@ func (c *Client) CommunicateInvoice(ctx context.Context, company domain.Company,
 	if c.config.InvoiceURL == "" {
 		return nil, fmt.Errorf("at.Config: InvoiceURL required for CommunicateInvoice")
 	}
-	ctx, cancel := c.ensureDeadline(ctx)
-	defer cancel()
-	return retryable(ctx, c.logger, c.config.Retry, "CommunicateInvoice", func() (*InvoiceResult, error) {
-		return c.communicateInvoiceOnce(ctx, company, inv)
-	})
-}
-
-func (c *Client) communicateInvoiceOnce(ctx context.Context, company domain.Company, inv domain.SalesInvoice) (*InvoiceResult, error) {
-	creds, err := c.prepareCredentials()
-	if err != nil {
-		return nil, err
-	}
-	envelope, err := buildInvoiceEnvelope(creds, company, inv)
-	if err != nil {
-		return nil, fmt.Errorf("building SOAP envelope: %w", err)
-	}
-	respBody, err := c.sendSOAPRequest(ctx, "CommunicateInvoice", c.config.InvoiceURL, envelope)
-	if err != nil {
-		return nil, err
-	}
-
-	var resp registerInvoiceResponse
-	if err := parseSOAPResponse(respBody, &resp); err != nil {
-		return nil, err
-	}
-	if resp.Response.CodigoResposta != 0 {
-		atErr := Error{Code: strconv.Itoa(resp.Response.CodigoResposta), Message: resp.Response.Mensagem}
-		c.logger.WarnContext(ctx, "AT returned error",
-			slog.String("operation", "CommunicateInvoice"),
-			slog.String("code", atErr.Code),
-			slog.String("message", atErr.Message))
-		return nil, atErr
-	}
-
-	opDate, err := time.Parse("2006-01-02T15:04:05", resp.Response.DataOperacao)
-	if err != nil {
-		c.logger.WarnContext(ctx, "AT DataOperacao unparseable; using local time",
-			slog.String("DataOperacao", resp.Response.DataOperacao))
-		opDate = time.Now()
-	}
-	return &InvoiceResult{
-		Code:          0,
-		Message:       resp.Response.Mensagem,
-		OperationDate: opDate,
-	}, nil
+	return soapCall(c, ctx, "CommunicateInvoice", c.config.InvoiceURL,
+		func(creds soapCredentials) ([]byte, error) {
+			return buildInvoiceEnvelope(creds, company, inv)
+		},
+		func(ctx context.Context, resp *registerInvoiceResponse) (*InvoiceResult, error) {
+			// fatcorews convention: 0 = success, any non-zero (negative included)
+			// = error — unlike SeriesWS's codResultOper >= 3000 boundary.
+			if resp.Response.CodigoResposta != 0 {
+				return nil, c.atError(ctx, "CommunicateInvoice", resp.Response.CodigoResposta, resp.Response.Mensagem)
+			}
+			return &InvoiceResult{
+				Code:          0,
+				Message:       resp.Response.Mensagem,
+				OperationDate: c.parseATDate(ctx, "DataOperacao", "2006-01-02T15:04:05", resp.Response.DataOperacao),
+			}, nil
+		})
 }

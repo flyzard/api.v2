@@ -27,7 +27,7 @@ func fixtureGT(t *testing.T) domain.StockMovement {
 }
 
 func TestBuildStockMovement_Structure(t *testing.T) {
-	eng, err := buildStockMovement(fixtureGT(t), validMeta())
+	eng, err := buildStockMovement(fixtureGT(t), validMeta(), false)
 	if err != nil {
 		t.Fatal(err)
 	}

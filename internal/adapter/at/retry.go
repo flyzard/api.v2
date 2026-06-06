@@ -80,14 +80,6 @@ func retryable[T any](ctx context.Context, logger *slog.Logger, rs RetrySettings
 	return zero, lastErr
 }
 
-// retryableNoResult is retryable for functions that return only error.
-func retryableNoResult(ctx context.Context, logger *slog.Logger, rs RetrySettings, op string, fn func() error) error {
-	_, err := retryable(ctx, logger, rs, op, func() (struct{}, error) {
-		return struct{}{}, fn()
-	})
-	return err
-}
-
 // jitteredBackoff returns a duration between backoff/2 and backoff.
 func jitteredBackoff(backoff time.Duration) time.Duration {
 	half := backoff / 2

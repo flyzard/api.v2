@@ -59,9 +59,9 @@ type xmlDocumentTotals struct {
 }
 
 type xmlCurrency struct {
-	CurrencyCode   string `xml:"CurrencyCode"`
-	CurrencyAmount string `xml:"CurrencyAmount"`
-	ExchangeRate   string `xml:"ExchangeRate"`
+	CurrencyCode   string    `xml:"CurrencyCode"`
+	CurrencyAmount saftMoney `xml:"CurrencyAmount"`
+	ExchangeRate   string    `xml:"ExchangeRate"`
 }
 
 // xmlSettlement carries payment terms and the document-level global discount
@@ -188,11 +188,13 @@ func buildSalesTotals(d domain.SalesInvoice) xmlDocumentTotals {
 }
 
 func buildCurrency(c domain.Currency) *xmlCurrency {
-	rate := c.ExchangeRate.Float64()
 	return &xmlCurrency{
-		CurrencyCode:   string(c.Code),
-		CurrencyAmount: fmt.Sprintf("%.2f", c.Amount.Float64()*rate),
-		ExchangeRate:   fmt.Sprintf("%.6f", rate),
+		CurrencyCode: string(c.Code),
+		// NativeAmount reconstructs Amount × ExchangeRate on the scaled ints
+		// with half-away-from-zero rounding — the package convention. The old
+		// float round-trip drifted on half-cents (%.2f rounds half-to-even).
+		CurrencyAmount: saftMoney(c.NativeAmount()),
+		ExchangeRate:   fmt.Sprintf("%.6f", c.ExchangeRate.Float64()),
 	}
 }
 

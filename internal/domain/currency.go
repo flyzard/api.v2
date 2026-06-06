@@ -79,6 +79,21 @@ func NewCurrency(code CurrencyCode, amount Money, rate ExchangeRate, date time.T
 	return c, c.Validate()
 }
 
+// NativeAmount reconstructs the foreign-currency amount (Amount × ExchangeRate)
+// on the scaled ints, rounding half-away-from-zero like Format2DP — a float
+// round-trip drifts on half-cents and %.2f rounds half-to-even. Computed in
+// cents (Amount is constructor-gated to cent precision) so overflow needs
+// cents × rate > 2^63 (e.g. €540M at JPY≈170/EUR); the panic mirrors Money.Mul's
+// programmer-error guard.
+func (c Currency) NativeAmount() Money {
+	cents := int64(c.Amount) / centScale
+	rate := int64(c.ExchangeRate)
+	if cents != 0 && rate != 0 && abs64(rate) > math.MaxInt64/abs64(cents) {
+		panic(fmt.Sprintf("Currency.NativeAmount overflow: %d¢ × %d", cents, rate))
+	}
+	return Money(roundDiv(cents*rate, exchangeRateScale) * centScale)
+}
+
 func (c Currency) Validate() error {
 	if !c.Code.IsValid() {
 		return fmt.Errorf("invalid currency code: %q", c.Code)

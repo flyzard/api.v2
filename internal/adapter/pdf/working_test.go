@@ -19,7 +19,7 @@ func fixtureWorkDoc(t *testing.T) domain.WorkDocument {
 }
 
 func TestBuildWorkDocument_Structure(t *testing.T) {
-	eng, err := buildWorkDocument(fixtureWorkDoc(t), validMeta())
+	eng, err := buildWorkDocument(fixtureWorkDoc(t), validMeta(), false)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -198,8 +198,10 @@ func unmarshalString[T any](data []byte, ctor func(string) (T, error), out *T) e
 
 // MarshalJSON emits Money as integer cents to match the AT 2-decimal contract
 // and to keep the wire format free of float round-trip drift. €49.50 → 4950.
+// Sub-cent values (Totals carry them via MulPercent) round half-away-from-zero
+// so the persisted cents agree with Format2DP — the signed and printed figure.
 func (m Money) MarshalJSON() ([]byte, error) {
-	return json.Marshal(int64(m) / centScale)
+	return json.Marshal(roundDiv(int64(m), centScale))
 }
 
 func (m *Money) UnmarshalJSON(data []byte) error {

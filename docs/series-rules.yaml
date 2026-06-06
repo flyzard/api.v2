@@ -1,0 +1,287 @@
+# Faturly — Series / ATCUD validation rules (verified 2026-06)
+# Canonical, LLM-consumable ruleset for validating Portuguese document series, numbering and ATCUD.
+
+_how_to_apply:
+  description: >
+    Evaluate each rule's `check` against the document (already parsed) plus the series registry.
+    Use the other fields to decide what to DO with the result.
+  fields:
+    id: stable identifier
+    statement: plain-language requirement
+    check: condition to evaluate; "procedural" = cannot be auto-checked from a single document
+    type: deterministic | procedural | judgment
+    severity: blocking | warning | info
+    since: rule is only in force for documents whose issue_date >= this; ignore the rule for older docs
+    source: legal / spec citation
+    status: confirmed | partial | unconfirmed | inferred  (how much to trust it)
+    note: caveats
+  decision_protocol:
+    - if type == deterministic and check is FALSE:
+        if severity == blocking -> REJECT, cite source
+        if severity == warning  -> WARN, do not block
+    - if type == judgment or status in [unconfirmed, partial] -> never hard-reject; emit needs_review with source
+    - if type == procedural -> verify against registry/lifecycle state, not the document body
+    - always gate by `since` using the document's issue_date
+  field_glossary:
+    document_number: full doc id, e.g. "FT A2026/000123"
+    doc_type_code: internal type prefix before the space, e.g. "FT"
+    series_id: series segment between the space and the "/", e.g. "A2026"
+    sequential_number: digits after the "/", e.g. "000123"
+    validation_code: code assigned by AT for the series (first part of ATCUD)
+    atcud: value stored in SAF-T / encoded in QR, e.g. "TES123TE-123"
+    atcud_printed: human-readable form on the document, e.g. "ATCUD:TES123TE-123"
+    processing_means: programa de faturação | portal | tipografia | outro meio eletrónico
+    has_agreement: for self-billing, whether a prior acordo exists
+
+# ── A. Document number & series identifier format ────────────────────────────
+rules:
+  - id: document-number-format
+    statement: Document number must be "TipoDoc Série/Sequencial"; sequential is numeric-only; max 60 chars.
+    check: matches(document_number, "^[^ ]+ [^/^ ]+/[0-9]+$") and length(document_number) <= 60
+    type: deterministic
+    severity: blocking
+    since: 2017-07-01
+    source: SAF-T PT 1.04_01 XSD (DocumentNumber/InvoiceNo pattern); Portaria 302/2016
+    status: confirmed
+    note: Verified directly in the XSD. Same family pattern for InvoiceNo, DocumentNumber, PaymentRefNo.
+
+  - id: series-identifier-charset
+    statement: The series_id segment must not contain a space, "/", or "^".
+    check: matches(series_id, "^[^/^ ]+$")
+    type: deterministic
+    severity: blocking
+    since: 2017-07-01
+    source: SAF-T PT 1.04_01 XSD (derived from the DocumentNumber pattern)
+    status: confirmed
+
+  - id: series-identifier-safe-charset
+    statement: Prefer plain A-Z/0-9 (no accents/specials) to avoid AT communication rejection.
+    check: matches(series_id, "^[A-Za-z0-9._-]+$")
+    type: deterministic
+    severity: warning
+    since: 2023-01-01
+    source: AT communication good practice
+    status: partial
+
+  - id: series-identifier-no-reserved-prefix
+    statement: No documented reserved prefix exists, including "AT".
+    check: procedural
+    type: judgment
+    severity: info
+    since: 2023-01-01
+    source: Portaria 195/2020 + SAF-T XSD impose no prefix rule
+    status: unconfirmed
+    note: >
+      Claim that registarSerie rejects "AT" is unsubstantiated across all accessible sources.
+      Resolve ONLY via the series webservice WSDL or a test-environment registarSerie call.
+
+  - id: sequential-numeric-only
+    statement: The sequential number (after "/") is exclusively numeric.
+    check: matches(sequential_number, "^[0-9]+$")
+    type: deterministic
+    severity: blocking
+    since: 2017-07-01
+    source: Portaria 195/2020 art. 4.º n.º 3; SAF-T XSD
+    status: confirmed
+
+# ── B. Validation code (assigned by AT) ──────────────────────────────────────
+  - id: validation-code-min-length
+    statement: The AT-assigned series validation code is at least 8 characters.
+    check: length(validation_code) >= 8
+    type: deterministic
+    severity: blocking
+    since: 2023-01-01
+    source: Portaria 195/2020 art. 4.º n.º 1
+    status: confirmed
+
+  - id: validation-code-charset
+    statement: Validation code is alphanumeric from a restricted set (reported uppercase).
+    check: matches(validation_code, "^[0-9A-Z]+$")
+    type: deterministic
+    severity: warning
+    since: 2023-01-01
+    source: Portaria 195/2020 art. 4.º + QR/ATCUD technical spec
+    status: partial
+    note: Exact allowed/excluded character set is in the technical spec; "uppercase only" is third-party reported, not confirmed from the primary source. Replace the class when confirmed.
+
+  - id: validation-code-assigned-not-constructed
+    statement: The code is assigned by AT; never generate or mutate it — only store/validate transcription.
+    check: procedural
+    type: procedural
+    severity: blocking
+    since: 2023-01-01
+    source: Portaria 195/2020 art. 5.º
+    status: confirmed
+
+  - id: validation-code-locks-after-first-doc
+    statement: Once a document is issued in the series, the validation code cannot be edited or removed.
+    check: procedural
+    type: procedural
+    severity: blocking
+    since: 2023-01-01
+    source: AT series-management rules
+    status: confirmed
+    note: A mis-transcribed code cannot be moved; void both series and communicate a new one.
+
+# ── C. ATCUD ─────────────────────────────────────────────────────────────────
+  - id: atcud-mandatory
+    statement: ATCUD must be present on all fiscally relevant documents, every page, above the QR when applicable.
+    check: atcud != "" and atcud != null
+    type: deterministic
+    severity: blocking
+    since: 2023-01-01
+    source: DL 28/2019 art. 7.º n.º 3; Portaria 195/2020 art. 4.º
+    status: confirmed
+
+  - id: atcud-composition
+    statement: ATCUD = validation_code + "-" + sequential_number.
+    check: atcud == validation_code + "-" + sequential_number
+    type: deterministic
+    severity: blocking
+    since: 2023-01-01
+    source: Portaria 195/2020 art. 4.º n.º 2
+    status: confirmed
+    note: Business rule checked by AT server-side; NOT enforced by the SAF-T XSD.
+
+  - id: atcud-saft-qr-format
+    statement: In SAF-T and the QR code, ATCUD is the bare "code-seq" (no "ATCUD:" prefix); max 100 chars.
+    check: matches(atcud, "^([0-9A-Z]{8,}-[0-9]+|0)$") and length(atcud) <= 100
+    type: deterministic
+    severity: blocking
+    since: 2023-01-01
+    source: Portaria 195/2020; AT FAQ 4536; SAF-T XSD (maxLength 100 only)
+    status: confirmed
+    note: XSD types ATCUD as plain text max 100 chars with NO pattern. The format is a server-side/business rule, not a schema constraint.
+
+  - id: atcud-print-prefix
+    statement: On the presented/printed document the ATCUD shows as "ATCUD:code-seq".
+    check: atcud_printed == "ATCUD:" + atcud
+    type: deterministic
+    severity: blocking
+    since: 2023-01-01
+    source: Portaria 195/2020 art. 4.º
+    status: confirmed
+
+  - id: atcud-zero-tolerated
+    statement: The value "0" is accepted in the ATCUD field where no validation code applies (e.g. historical/recovery).
+    check: if atcud == "0" then skip [atcud-composition, atcud-saft-qr-format, validation-code-*]
+    type: deterministic
+    severity: info
+    since: 2023-01-01
+    source: SAF-T XSD (no pattern → "0" passes)
+    status: partial
+    note: Schema-tolerated for sure; whether "0" is the officially sanctioned sentinel needs FAQ confirmation before relying on it.
+
+# ── D. Series lifecycle & numbering ──────────────────────────────────────────
+  - id: series-communicated-before-use
+    statement: Series must be communicated and have a validation code associated before the first document is issued.
+    check: series.validation_code != "" and series.communicated_at <= first_document.issue_date
+    type: procedural
+    severity: blocking
+    since: 2023-01-01
+    source: Portaria 195/2020 art. 5.º; DL 28/2019 art. 7.º
+    status: confirmed
+
+  - id: validation-code-key
+    statement: A distinct validation code exists per (series_id + doc_type + processing_means).
+    check: unique_code_per(series_id, doc_type_code, processing_means)
+    type: deterministic
+    severity: blocking
+    since: 2023-01-01
+    source: AT FAQ 4303
+    status: confirmed
+
+  - id: no-repeated-doctype-in-series
+    statement: A series cannot contain repeated document types (one code per doc type per series).
+    check: no_duplicate_doc_type_within(series_id)
+    type: deterministic
+    severity: blocking
+    since: 2023-01-01
+    source: AT webservice validation (common rejection)
+    status: confirmed
+
+  - id: numbering-gapless
+    statement: Within a series the numbering is sequential and continuous — no gaps, no duplicates.
+    check: sorted(distinct(numbers_in(series_id))) is a contiguous range with no gaps or duplicates
+    type: deterministic
+    severity: blocking
+    since: 2014-07-03
+    source: Despacho 8632/2014; CIVA art. 36.º
+    status: confirmed
+    note: Voided (anulado) documents keep their number and do NOT create a gap (inferred but consistent).
+
+  - id: numbering-restart-needs-new-series
+    statement: Restarting numbering requires a new communicated series and new code; you may instead keep one series across years without re-registering.
+    check: if numbering_restart_detected(series_id) then requires_new_communicated_series
+    type: judgment
+    severity: blocking
+    since: 2023-01-01
+    source: AT guidance
+    status: confirmed
+    note: You are NOT obliged to open a new annual series; continuing the same series and sequence across years needs no new communication. Only a restart does.
+
+  - id: series-finalization
+    statement: To finalize a series, report the last document actually issued; no documents may be issued after finalization.
+    check: procedural
+    type: procedural
+    severity: blocking
+    since: 2023-01-01
+    source: AT series-management rules
+    status: confirmed
+
+# ── E. Channels & responsibility ─────────────────────────────────────────────
+  - id: communication-channels
+    statement: Series may be communicated manually (Portal das Finanças) or by webservice (registarSerie).
+    check: procedural
+    type: procedural
+    severity: info
+    since: 2023-01-01
+    source: Portaria 195/2020 art. 5.º
+    status: confirmed
+
+  - id: portal-issued-auto-communicated
+    statement: Documents issued directly in the Portal das Finanças have the series and code auto-assigned by AT.
+    check: procedural
+    type: procedural
+    severity: info
+    since: 2023-01-01
+    source: AT FAQ 4305
+    status: confirmed
+
+  - id: preprinted-tipografia-communicates
+    statement: For pre-printed documents (tipografia autorizada), the tipografia communicates the series.
+    check: procedural
+    type: procedural
+    severity: info
+    since: 2023-01-01
+    source: AT FAQ 4449
+    status: confirmed
+
+  - id: self-billing-series
+    statement: Self-billing uses its own separate series, communicated by the acquirer; webservice only for self-billing WITH prior agreement, otherwise manual.
+    check: if doc_is_self_billing then (series.is_self_billing and (has_agreement or processing_means == 'portal'))
+    type: procedural
+    severity: blocking
+    since: 2023-01-01
+    source: AT autofaturação integration manual; vendor docs (2024-2025)
+    status: confirmed
+    note: Corrected — earlier "no webservice for self-billing" was outdated. Webservice now supports self-billing WITH agreement; without agreement remains manual-only.
+
+# ── F. Scope ─────────────────────────────────────────────────────────────────
+  - id: scope-applicability
+    statement: Applies to all IRS/IRC taxpayers issuing fiscally relevant documents, including under exemption (e.g. art. 53.º CIVA).
+    check: procedural
+    type: procedural
+    severity: info
+    since: 2023-01-01
+    source: Portaria 195/2020; AT FAQ
+    status: confirmed
+
+  - id: scope-exception
+    statement: Atos isolados and exclusive use of the portal electronic recibo are the exception (auto-handled, no manual communication).
+    check: procedural
+    type: procedural
+    severity: info
+    since: 2023-01-01
+    source: AT guidance
+    status: confirmed

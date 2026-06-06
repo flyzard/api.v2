@@ -181,6 +181,35 @@ func TestDocumentLine_ValidateShareBounds(t *testing.T) {
 	}
 }
 
+// Global discount is a sales-only concept; a stray share on another family's
+// line (malformed payload, future persistence bug) must not silently lower
+// its net.
+func TestValidate_GlobalDiscountShareSalesOnly(t *testing.T) {
+	line := gdTestLine(t, 1, 10.00, nil)
+	line.Tax = mustVAT(t, TaxNormal)
+	line.GlobalDiscountShare = Money(100 * centScale)
+
+	sales := gdDraft(t, nil)
+	cd := CommonDraftDocument{
+		DocumentCore: DocumentCore{
+			DocumentType: NE,
+			Customer:     sales.Customer,
+			Date:         sales.Date,
+		},
+		Series: mustVal(NewSeries("GDW2026", NE)),
+	}
+	cd.Lines = []DocumentLine{line}
+	if err := cd.Validate(); err == nil {
+		t.Error("work-document line with stray global discount share accepted")
+	}
+
+	// Sales family keeps accepting baked shares.
+	sales.Lines[0].GlobalDiscountShare = Money(100 * centScale)
+	if err := sales.Validate(); err != nil {
+		t.Errorf("sales draft with baked share rejected: %v", err)
+	}
+}
+
 func TestDocumentLine_ShareJSONRoundTrip(t *testing.T) {
 	l := gdTestLine(t, 1, 10.00, nil)
 	l.Tax = mustVAT(t, TaxNormal)

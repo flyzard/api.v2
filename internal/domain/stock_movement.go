@@ -81,20 +81,23 @@ func IssueStockMovement(draft *DraftStockMovement, series *Series, signer Signer
 	if err := draft.Validate(); err != nil {
 		return StockMovement{}, fmt.Errorf("draft: %w", err)
 	}
-	issued, err := issueCommon(&draft.CommonDraftDocument, series, signer, sourceID, now, opts)
-	if err != nil {
-		return StockMovement{}, err
-	}
 	// F-SAFT-16: a guia cannot be issued AFTER the goods have already moved
-	// (no retro-active transport). Compare on the same Lisbon clock the system
-	// entry was stamped with. Skipped under recovery — a recovered paper guia
-	// necessarily started moving before its integration time.
+	// (no retro-active transport). Compare on the same Lisbon clock issueCommon
+	// stamps SystemEntryDate with. Runs BEFORE issueCommon so a rejection never
+	// advances the series counter (issueCommon contract: on error the series is
+	// untouched). Skipped under recovery — a recovered paper guia necessarily
+	// started moving before its integration time.
 	if opts.Recovered == nil {
 		startLisbon := draft.MovementStartTime.In(lisbonLocation)
-		if startLisbon.Before(issued.SystemEntryDate) {
+		sysEntry := now.In(lisbonLocation)
+		if startLisbon.Before(sysEntry) {
 			return StockMovement{}, fmt.Errorf("movement_start_time %s precedes system entry %s",
-				startLisbon.Format(time.RFC3339), issued.SystemEntryDate.Format(time.RFC3339))
+				startLisbon.Format(time.RFC3339), sysEntry.Format(time.RFC3339))
 		}
+	}
+	issued, err := issueCommon(&draft.CommonDraftDocument, &draft.CommonDraftDocument, series, signer, sourceID, now, opts)
+	if err != nil {
+		return StockMovement{}, err
 	}
 	if draft.ThirdParties {
 		issued.Status = StatusThirdParty

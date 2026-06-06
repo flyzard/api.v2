@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/rsa"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -245,12 +246,11 @@ func (c *Client) sendSOAPRequest(ctx context.Context, operation, url string, env
 	return body, nil
 }
 
-// operResult converts an AT 3xxx+ operation code into an Error, logging it.
-func (c *Client) operResult(ctx context.Context, operation string, r atOperationResult) error {
-	if !r.IsError() {
-		return nil
-	}
-	atErr := Error{Code: strconv.Itoa(r.CodResultOper), Message: r.MsgResultOper}
+// atError logs and wraps an AT-reported business error. Shared by every
+// webservice; SeriesWS goes through operResult, sgdtws/fatcorews call it
+// directly with their own status fields.
+func (c *Client) atError(ctx context.Context, operation string, code int, message string) Error {
+	atErr := Error{Code: strconv.Itoa(code), Message: message}
 	c.logger.WarnContext(ctx, "AT returned error",
 		slog.String("operation", operation),
 		slog.String("code", atErr.Code),
@@ -258,160 +258,166 @@ func (c *Client) operResult(ctx context.Context, operation string, r atOperation
 	return atErr
 }
 
-// RegisterSeries registers a document series with AT (registarSerie).
-func (c *Client) RegisterSeries(ctx context.Context, req SeriesRegistration) (*SeriesRegistrationResult, error) {
+// operResult converts an AT 3xxx+ operation code into an Error, logging it.
+func (c *Client) operResult(ctx context.Context, operation string, r atOperationResult) error {
+	if !r.IsError() {
+		return nil
+	}
+	return c.atError(ctx, operation, r.CodResultOper, r.MsgResultOper)
+}
+
+// parseATDate parses an AT response timestamp, warning and falling back to
+// local time when AT sends an unparseable value.
+func (c *Client) parseATDate(ctx context.Context, field, layout, raw string) time.Time {
+	t, err := time.Parse(layout, raw)
+	if err != nil {
+		c.logger.WarnContext(ctx, "AT date unparseable; falling back to local time",
+			slog.String(field, raw))
+		return time.Now()
+	}
+	return t
+}
+
+// soapCall runs the per-operation skeleton every webservice method shares:
+// deadline, retry loop, fresh WS-Security credentials per attempt (replay
+// protection), envelope build, HTTP round-trip, SOAP fault/parse — then the
+// operation-specific inspect step on the decoded response. A free function
+// because Go methods cannot take type parameters.
+func soapCall[Resp, Out any](
+	c *Client, ctx context.Context, operation, url string,
+	build func(soapCredentials) ([]byte, error),
+	inspect func(ctx context.Context, resp *Resp) (Out, error),
+) (Out, error) {
 	ctx, cancel := c.ensureDeadline(ctx)
 	defer cancel()
-	return retryable(ctx, c.logger, c.config.Retry, "RegisterSeries", func() (*SeriesRegistrationResult, error) {
-		return c.registerSeriesOnce(ctx, req)
+	return retryable(ctx, c.logger, c.config.Retry, operation, func() (Out, error) {
+		var zero Out
+		creds, err := c.prepareCredentials()
+		if err != nil {
+			return zero, err
+		}
+		envelope, err := build(creds)
+		if err != nil {
+			return zero, fmt.Errorf("building SOAP envelope: %w", err)
+		}
+		respBody, err := c.sendSOAPRequest(ctx, operation, url, envelope)
+		if err != nil {
+			return zero, err
+		}
+		var resp Resp
+		if err := parseSOAPResponse(respBody, &resp); err != nil {
+			return zero, err
+		}
+		return inspect(ctx, &resp)
 	})
 }
 
-func (c *Client) registerSeriesOnce(ctx context.Context, req SeriesRegistration) (*SeriesRegistrationResult, error) {
-	creds, err := c.prepareCredentials()
-	if err != nil {
+// RegisterSeries registers a document series with AT (registarSerie).
+//
+// Retry hazard + reconciliation: registarSerie is not idempotent. A retryable
+// failure ("CONNECTION", HTTP 502/504) can mean the request reached AT and was
+// committed but the response was lost — the retry then gets a deterministic
+// "série já registada" (4xxx) error even though registration succeeded. On any
+// failure this method therefore consults the series (consultarSeries) and, if
+// AT shows it registered, returns its state as success — mirroring
+// NullClient's idempotent RegisterSeries. Genuine failures fall through: the
+// consult finds nothing and the original register error surfaces.
+func (c *Client) RegisterSeries(ctx context.Context, req SeriesRegistration) (*SeriesRegistrationResult, error) {
+	res, err := c.registerSeries(ctx, req)
+	if err == nil {
+		return res, nil
+	}
+	var atErr Error
+	if !errors.As(err, &atErr) {
 		return nil, err
 	}
-	envelope, err := buildSeriesRegistrationEnvelope(creds, req, c.config.SoftwareCertNum)
-	if err != nil {
-		return nil, fmt.Errorf("building SOAP envelope: %w", err)
+	st, stErr := c.GetSeriesStatus(ctx, req.SeriesID, req.DocType)
+	if stErr != nil || st.Status != domain.SeriesActive || st.ValidationCode == "" {
+		return nil, err // reconcile miss: keep the register error
 	}
-	respBody, err := c.sendSOAPRequest(ctx, "RegisterSeries", c.config.SeriesURL, envelope)
-	if err != nil {
-		return nil, err
-	}
-
-	var resp seriesRegistrationResponse
-	if err := parseSOAPResponse(respBody, &resp); err != nil {
-		return nil, err
-	}
-	if err := c.operResult(ctx, "RegisterSeries", resp.Resp.InfoResultOper); err != nil {
-		return nil, err
-	}
-	if resp.Resp.InfoSerie == nil {
-		return nil, Error{Code: "EMPTY_RESPONSE", Message: "AT returned no infoSerie for registarSerie"}
-	}
-
-	info := resp.Resp.InfoSerie
-	regDate, err := time.Parse("2006-01-02", info.DataRegisto)
-	if err != nil {
-		c.logger.WarnContext(ctx, "AT dataRegisto unparseable; falling back to local time",
-			slog.String("dataRegisto", info.DataRegisto))
-		regDate = time.Now()
-	}
+	c.logger.InfoContext(ctx, "RegisterSeries reconciled via consultarSeries",
+		slog.String("series", req.SeriesID),
+		slog.String("registerError", err.Error()))
 	return &SeriesRegistrationResult{
-		ValidationCode:   info.CodValidacaoSerie,
-		RegistrationDate: regDate,
-		Status:           statusFromEstado(info.Estado),
+		ValidationCode:   st.ValidationCode,
+		RegistrationDate: st.RegistrationDate,
+		Status:           st.Status,
 	}, nil
+}
+
+func (c *Client) registerSeries(ctx context.Context, req SeriesRegistration) (*SeriesRegistrationResult, error) {
+	return soapCall(c, ctx, "RegisterSeries", c.config.SeriesURL,
+		func(creds soapCredentials) ([]byte, error) {
+			return buildSeriesRegistrationEnvelope(creds, req, c.config.SoftwareCertNum)
+		},
+		func(ctx context.Context, resp *seriesRegistrationResponse) (*SeriesRegistrationResult, error) {
+			if err := c.operResult(ctx, "RegisterSeries", resp.Resp.InfoResultOper); err != nil {
+				return nil, err
+			}
+			info := resp.Resp.InfoSerie
+			if info == nil {
+				return nil, Error{Code: "EMPTY_RESPONSE", Message: "AT returned no infoSerie for registarSerie"}
+			}
+			return &SeriesRegistrationResult{
+				ValidationCode:   info.CodValidacaoSerie,
+				RegistrationDate: c.parseATDate(ctx, "dataRegisto", "2006-01-02", info.DataRegisto),
+				Status:           statusFromEstado(info.Estado),
+			}, nil
+		})
 }
 
 // FinalizeSeries closes a series with AT (finalizarSerie).
 func (c *Client) FinalizeSeries(ctx context.Context, req SeriesFinalization) error {
-	ctx, cancel := c.ensureDeadline(ctx)
-	defer cancel()
-	return retryableNoResult(ctx, c.logger, c.config.Retry, "FinalizeSeries", func() error {
-		return c.finalizeSeriesOnce(ctx, req)
-	})
-}
-
-func (c *Client) finalizeSeriesOnce(ctx context.Context, req SeriesFinalization) error {
-	creds, err := c.prepareCredentials()
-	if err != nil {
-		return err
-	}
-	envelope, err := buildSeriesFinalizationEnvelope(creds, req)
-	if err != nil {
-		return fmt.Errorf("building SOAP envelope: %w", err)
-	}
-	respBody, err := c.sendSOAPRequest(ctx, "FinalizeSeries", c.config.SeriesURL, envelope)
-	if err != nil {
-		return err
-	}
-
-	var resp seriesFinalizationResponse
-	if err := parseSOAPResponse(respBody, &resp); err != nil {
-		return err
-	}
-	return c.operResult(ctx, "FinalizeSeries", resp.Resp.InfoResultOper)
+	_, err := soapCall(c, ctx, "FinalizeSeries", c.config.SeriesURL,
+		func(creds soapCredentials) ([]byte, error) {
+			return buildSeriesFinalizationEnvelope(creds, req)
+		},
+		func(ctx context.Context, resp *seriesFinalizationResponse) (struct{}, error) {
+			return struct{}{}, c.operResult(ctx, "FinalizeSeries", resp.Resp.InfoResultOper)
+		})
+	return err
 }
 
 // CancelSeries voids a series registration with AT (anularSerie). Only legal
 // for series that never issued a document.
 func (c *Client) CancelSeries(ctx context.Context, req SeriesCancellation) error {
-	ctx, cancel := c.ensureDeadline(ctx)
-	defer cancel()
-	return retryableNoResult(ctx, c.logger, c.config.Retry, "CancelSeries", func() error {
-		return c.cancelSeriesOnce(ctx, req)
-	})
-}
-
-func (c *Client) cancelSeriesOnce(ctx context.Context, req SeriesCancellation) error {
-	creds, err := c.prepareCredentials()
-	if err != nil {
-		return err
-	}
-	envelope, err := buildSeriesCancellationEnvelope(creds, req)
-	if err != nil {
-		return fmt.Errorf("building SOAP envelope: %w", err)
-	}
-	respBody, err := c.sendSOAPRequest(ctx, "CancelSeries", c.config.SeriesURL, envelope)
-	if err != nil {
-		return err
-	}
-
-	var resp seriesCancellationResponse
-	if err := parseSOAPResponse(respBody, &resp); err != nil {
-		return err
-	}
-	return c.operResult(ctx, "CancelSeries", resp.Resp.InfoResultOper)
+	_, err := soapCall(c, ctx, "CancelSeries", c.config.SeriesURL,
+		func(creds soapCredentials) ([]byte, error) {
+			return buildSeriesCancellationEnvelope(creds, req)
+		},
+		func(ctx context.Context, resp *seriesCancellationResponse) (struct{}, error) {
+			return struct{}{}, c.operResult(ctx, "CancelSeries", resp.Resp.InfoResultOper)
+		})
+	return err
 }
 
 // GetSeriesStatus queries series state from AT (consultarSeries).
 func (c *Client) GetSeriesStatus(ctx context.Context, seriesID string, docType domain.DocumentType) (*SeriesStatus, error) {
-	ctx, cancel := c.ensureDeadline(ctx)
-	defer cancel()
-	return retryable(ctx, c.logger, c.config.Retry, "GetSeriesStatus", func() (*SeriesStatus, error) {
-		return c.getSeriesStatusOnce(ctx, seriesID, docType)
-	})
-}
-
-func (c *Client) getSeriesStatusOnce(ctx context.Context, seriesID string, docType domain.DocumentType) (*SeriesStatus, error) {
-	creds, err := c.prepareCredentials()
-	if err != nil {
-		return nil, err
-	}
-	envelope, err := buildSeriesStatusEnvelope(creds, seriesID, docType)
-	if err != nil {
-		return nil, fmt.Errorf("building SOAP envelope: %w", err)
-	}
-	respBody, err := c.sendSOAPRequest(ctx, "GetSeriesStatus", c.config.SeriesURL, envelope)
-	if err != nil {
-		return nil, err
-	}
-
-	var resp seriesStatusResponse
-	if err := parseSOAPResponse(respBody, &resp); err != nil {
-		return nil, err
-	}
-	if err := c.operResult(ctx, "GetSeriesStatus", resp.Resp.InfoResultOper); err != nil {
-		return nil, err
-	}
-	// consultarSeries can echo multiple infoSerie elements; pick the one
-	// matching the queried identifier rather than trusting position.
-	for _, info := range resp.Resp.InfoSerie {
-		if info.Serie != seriesID {
-			continue
-		}
-		return &SeriesStatus{
-			SeriesID:       info.Serie,
-			DocType:        domain.DocumentType(info.TipoDoc),
-			ValidationCode: info.CodValidacaoSerie,
-			Status:         statusFromEstado(info.Estado),
-			LastSeq:        info.SeqUltimoDocEmitido,
-		}, nil
-	}
-	return nil, Error{Code: "EMPTY_RESPONSE", Message: fmt.Sprintf("AT returned no infoSerie matching %q for consultarSeries", seriesID)}
+	return soapCall(c, ctx, "GetSeriesStatus", c.config.SeriesURL,
+		func(creds soapCredentials) ([]byte, error) {
+			return buildSeriesStatusEnvelope(creds, seriesID, docType)
+		},
+		func(ctx context.Context, resp *seriesStatusResponse) (*SeriesStatus, error) {
+			if err := c.operResult(ctx, "GetSeriesStatus", resp.Resp.InfoResultOper); err != nil {
+				return nil, err
+			}
+			// consultarSeries can echo multiple infoSerie elements; pick the one
+			// matching the queried identifier rather than trusting position.
+			for _, info := range resp.Resp.InfoSerie {
+				if info.Serie != seriesID {
+					continue
+				}
+				return &SeriesStatus{
+					SeriesID:         info.Serie,
+					DocType:          domain.DocumentType(info.TipoDoc),
+					ValidationCode:   info.CodValidacaoSerie,
+					Status:           statusFromEstado(info.Estado),
+					LastSeq:          info.SeqUltimoDocEmitido,
+					RegistrationDate: c.parseATDate(ctx, "dataRegisto", "2006-01-02", info.DataRegisto),
+				}, nil
+			}
+			return nil, Error{Code: "EMPTY_RESPONSE", Message: fmt.Sprintf("AT returned no infoSerie matching %q for consultarSeries", seriesID)}
+		})
 }
 
 // Compile-time interface check.

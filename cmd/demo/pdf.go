@@ -13,8 +13,11 @@ import (
 	"github.com/flyzard/invoicing.v2/internal/domain"
 )
 
-// writeDocumentPDFs renders a representative sample of the demo's issued
-// documents to out/*.pdf for visual inspection.
+// writeDocumentPDFs renders every issued document to out/*.pdf — the
+// certification dossier needs a PDF for each checklist document, and the
+// demo issues at least one document of every type the app supports. Each
+// document is rendered once per pdf.RequiredVias (Original + Duplicado;
+// transport documents also Triplicado).
 func writeDocumentPDFs(c *ctx, f *fixtures, sw config.SoftwareIdentity) {
 	if err := os.MkdirAll("out", 0o755); err != nil {
 		log.Fatalf("mkdir out: %v", err)
@@ -29,50 +32,59 @@ func writeDocumentPDFs(c *ctx, f *fixtures, sw config.SoftwareIdentity) {
 			PostalCode: f.Issuer.Address.PostalCode,
 		},
 		CertNumber: sw.CertificateNumber,
-		Copy:       pdf.Original,
 	}
 
-	// One PDF per document type present in each store family, lowest
-	// sequence number first (deterministic across runs).
-	sampleFamily(c.store.snapshotSales(),
+	// Every document in each store family, lowest sequence number first
+	// (deterministic across runs).
+	renderFamily(c.store.snapshotSales(), meta,
 		func(d domain.SalesInvoice) domain.DocNumber { return d.Number },
-		func(d domain.SalesInvoice) ([]byte, error) { return pdf.RenderSalesInvoice(d, meta) })
-	sampleFamily(c.store.snapshotStock(),
+		pdf.RenderSalesInvoice)
+	renderFamily(c.store.snapshotStock(), meta,
 		func(d domain.StockMovement) domain.DocNumber { return d.Number },
-		func(d domain.StockMovement) ([]byte, error) { return pdf.RenderStockMovement(d, meta) })
-	sampleFamily(c.store.snapshotWork(),
+		pdf.RenderStockMovement)
+	renderFamily(c.store.snapshotWork(), meta,
 		func(d domain.WorkDocument) domain.DocNumber { return d.Number },
-		func(d domain.WorkDocument) ([]byte, error) { return pdf.RenderWorkDocument(d, meta) })
-	sampleFamily(c.store.snapshotPayments(),
+		pdf.RenderWorkDocument)
+	renderFamily(c.store.snapshotPayments(), meta,
 		func(d domain.Payment) domain.DocNumber { return d.Number },
-		func(d domain.Payment) ([]byte, error) { return pdf.RenderPayment(d, meta) })
+		pdf.RenderPayment)
 }
 
-// sampleFamily writes out/<TYPE>-<seq>.pdf for the first (lowest-seq)
-// document of each type in docs.
-func sampleFamily[T any](docs []T, number func(T) domain.DocNumber, render func(T) ([]byte, error)) {
+// pdfName is the out/ filename for one via of a document; recordChecklist
+// relies on it so checklist rows always match the rendered files. The demo
+// uses one series per type, so type+seq is unique.
+func pdfName(n domain.DocNumber, via pdf.CopyKind) string {
+	suffix := map[pdf.CopyKind]string{
+		pdf.Duplicado:  "-duplicado",
+		pdf.Triplicado: "-triplicado",
+		pdf.SegundaVia: "-2avia", // without it a reprint would overwrite the Original file
+	}[via]
+	return fmt.Sprintf("%s-%d%s.pdf", string(n.Type), n.Seq, suffix)
+}
+
+// renderFamily writes out/<pdfName>.pdf for every required via of every
+// document in docs.
+func renderFamily[T any](docs []T, meta pdf.Meta,
+	number func(T) domain.DocNumber, render func(T, pdf.Meta) ([]byte, error)) {
 	// Tie-break on Series: same doc type can live in two series with equal
 	// Seq, and slices.SortFunc is unstable on ties.
 	slices.SortFunc(docs, func(a, b T) int {
 		na, nb := number(a), number(b)
 		return cmp.Or(cmp.Compare(na.Seq, nb.Seq), cmp.Compare(na.Series, nb.Series))
 	})
-	sampled := map[domain.DocumentType]bool{}
 	for _, d := range docs {
-		n := number(d)
-		if sampled[n.Type] {
-			continue
+		for _, via := range pdf.RequiredVias(number(d).Type) {
+			meta.Copy = via
+			name := pdfName(number(d), via)
+			data, err := render(d, meta)
+			if err != nil {
+				log.Fatalf("render %s: %v", name, err)
+			}
+			path := filepath.Join("out", name)
+			if err := os.WriteFile(path, data, 0o644); err != nil {
+				log.Fatalf("write %s: %v", path, err)
+			}
+			fmt.Printf("PDF written: %s (%d bytes)\n", path, len(data))
 		}
-		sampled[n.Type] = true
-		name := fmt.Sprintf("%s-%d.pdf", string(n.Type), n.Seq)
-		data, err := render(d)
-		if err != nil {
-			log.Fatalf("render %s: %v", name, err)
-		}
-		path := filepath.Join("out", name)
-		if err := os.WriteFile(path, data, 0o644); err != nil {
-			log.Fatalf("write %s: %v", path, err)
-		}
-		fmt.Printf("PDF written: %s (%d bytes)\n", path, len(data))
 	}
 }

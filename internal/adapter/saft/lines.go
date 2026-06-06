@@ -55,6 +55,25 @@ type xmlSimpleTotals struct {
 	Currency   *xmlCurrency `xml:"Currency,omitempty"`
 }
 
+// buildSimpleTotals projects domain Totals into the narrow DocumentTotals
+// block shared by working and movement documents. TaxPayable reassembles
+// TaxTotal + StampDuty — the domain keeps them split (document.go contract).
+func buildSimpleTotals(t domain.Totals) xmlSimpleTotals {
+	return xmlSimpleTotals{
+		TaxPayable: saftMoney(t.TaxTotal + t.StampDuty),
+		NetTotal:   saftMoney(t.NetTotal),
+		GrossTotal: saftMoney(t.GrossTotal),
+	}
+}
+
+// SAF-T TaxType discriminators, shared by line Tax elements and the
+// MasterFiles TaxTable.
+const (
+	taxTypeVAT   = "IVA"
+	taxTypeStamp = "IS"
+	taxTypeNS    = "NS"
+)
+
 // lineSide labels which of DebitAmount/CreditAmount this family populates.
 type lineSide int
 
@@ -114,7 +133,7 @@ func buildTax(t domain.LineTax) (*xmlTax, string, string) {
 	switch v := t.(type) {
 	case domain.VATTax:
 		tax := &xmlTax{
-			TaxType:          "IVA",
+			TaxType:          taxTypeVAT,
 			TaxCountryRegion: string(v.Rate.Region),
 			TaxCode:          string(v.Rate.Category),
 			TaxPercentage:    fmtPercent(v.Rate.Value),
@@ -125,7 +144,7 @@ func buildTax(t domain.LineTax) (*xmlTax, string, string) {
 		return tax, "", ""
 	case domain.StampTax:
 		tax := &xmlTax{
-			TaxType:          "IS",
+			TaxType:          taxTypeStamp,
 			TaxCountryRegion: string(v.Jurisdiction),
 			TaxCode:          v.Code,
 			TaxAmount:        domain.Money(v.Amount).Format2DP(),
@@ -133,7 +152,7 @@ func buildTax(t domain.LineTax) (*xmlTax, string, string) {
 		return tax, "", ""
 	case domain.NotSubjectTax:
 		tax := &xmlTax{
-			TaxType:          "NS",
+			TaxType:          taxTypeNS,
 			TaxCountryRegion: string(v.Jurisdiction),
 			TaxCode:          string(v.Reason),
 			TaxPercentage:    "0.00",

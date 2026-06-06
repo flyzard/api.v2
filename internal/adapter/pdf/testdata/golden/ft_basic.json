@@ -25,7 +25,7 @@
 			"type": "page",
 			"nodes": [
 				{
-					"value": 8,
+					"value": 7,
 					"type": "row",
 					"nodes": [
 						{
@@ -40,7 +40,7 @@
 										"prop_breakline_strategy": "empty_space_strategy",
 										"prop_color": "RGB(0, 0, 0)",
 										"prop_font_family": "liberation",
-										"prop_font_size": 11,
+										"prop_font_size": 13,
 										"prop_font_style": "B"
 									}
 								}
@@ -51,14 +51,14 @@
 							"type": "col",
 							"nodes": [
 								{
-									"value": "Fatura FT A2026/42",
+									"value": "Fatura",
 									"type": "text",
 									"details": {
 										"prop_align": "R",
 										"prop_breakline_strategy": "empty_space_strategy",
 										"prop_color": "RGB(0, 0, 0)",
 										"prop_font_family": "liberation",
-										"prop_font_size": 11,
+										"prop_font_size": 13,
 										"prop_font_style": "B"
 									}
 								}
@@ -80,7 +80,7 @@
 									"details": {
 										"prop_align": "L",
 										"prop_breakline_strategy": "empty_space_strategy",
-										"prop_color": "RGB(0, 0, 0)",
+										"prop_color": "RGB(110, 110, 110)",
 										"prop_font_family": "liberation",
 										"prop_font_size": 7
 									}
@@ -92,12 +92,81 @@
 							"type": "col",
 							"nodes": [
 								{
-									"value": "Data: 2026-05-10 · Original",
+									"value": "FT A2026/42",
 									"type": "text",
 									"details": {
 										"prop_align": "R",
 										"prop_breakline_strategy": "empty_space_strategy",
 										"prop_color": "RGB(0, 0, 0)",
+										"prop_font_family": "liberation",
+										"prop_font_size": 10,
+										"prop_font_style": "B"
+									}
+								}
+							]
+						}
+					]
+				},
+				{
+					"value": 4,
+					"type": "row",
+					"nodes": [
+						{
+							"value": 7,
+							"type": "col",
+							"nodes": [
+								{
+									"value": "",
+									"type": "text",
+									"details": {
+										"prop_align": "L",
+										"prop_breakline_strategy": "empty_space_strategy",
+										"prop_color": "RGB(110, 110, 110)",
+										"prop_font_family": "liberation",
+										"prop_font_size": 7
+									}
+								}
+							]
+						},
+						{
+							"value": 5,
+							"type": "col",
+							"nodes": [
+								{
+									"value": "Original",
+									"type": "text",
+									"details": {
+										"prop_align": "R",
+										"prop_breakline_strategy": "empty_space_strategy",
+										"prop_color": "RGB(0, 0, 0)",
+										"prop_font_family": "liberation",
+										"prop_font_size": 9,
+										"prop_font_style": "B"
+									}
+								}
+							]
+						}
+					]
+				},
+				{
+					"value": 3.5,
+					"type": "row",
+					"nodes": [
+						{
+							"value": 7,
+							"type": "col"
+						},
+						{
+							"value": 5,
+							"type": "col",
+							"nodes": [
+								{
+									"value": "Data: 2026-05-10",
+									"type": "text",
+									"details": {
+										"prop_align": "R",
+										"prop_breakline_strategy": "empty_space_strategy",
+										"prop_color": "RGB(110, 110, 110)",
 										"prop_font_family": "liberation",
 										"prop_font_size": 7
 									}
@@ -107,23 +176,25 @@
 					]
 				},
 				{
-					"value": 5,
+					"value": 3,
 					"type": "row",
 					"nodes": [
 						{
-							"value": 12,
+							"value": 0,
 							"type": "col",
+							"details": {
+								"is_max": true
+							},
 							"nodes": [
 								{
-									"value": "Cliente: Cliente Exemplo Lda · NIF: 123456789",
-									"type": "text",
+									"type": "line",
 									"details": {
-										"prop_align": "L",
-										"prop_breakline_strategy": "empty_space_strategy",
-										"prop_color": "RGB(0, 0, 0)",
-										"prop_font_family": "liberation",
-										"prop_font_size": 8,
-										"prop_top": 2
+										"prop_color": "RGB(200, 200, 200)",
+										"prop_offset_percent": 5,
+										"prop_orientation": "horizontal",
+										"prop_size_percent": 90,
+										"prop_style": "solid",
+										"prop_thickness": 0.3
 									}
 								}
 							]
@@ -139,14 +210,16 @@
 							"type": "col",
 							"nodes": [
 								{
-									"value": "Avenida Teste 42, 4000-001 Porto",
+									"value": "CLIENTE",
 									"type": "text",
 									"details": {
 										"prop_align": "L",
 										"prop_breakline_strategy": "empty_space_strategy",
-										"prop_color": "RGB(0, 0, 0)",
+										"prop_color": "RGB(110, 110, 110)",
 										"prop_font_family": "liberation",
-										"prop_font_size": 7
+										"prop_font_size": 6.5,
+										"prop_font_style": "B",
+										"prop_top": 1
 									}
 								}
 							]
@@ -154,8 +227,71 @@
 					]
 				},
 				{
-					"value": 6,
+					"value": 4.5,
 					"type": "row",
+					"nodes": [
+						{
+							"value": 12,
+							"type": "col",
+							"nodes": [
+								{
+									"value": "Cliente Exemplo Lda · NIF: 123456789",
+									"type": "text",
+									"details": {
+										"prop_align": "L",
+										"prop_breakline_strategy": "empty_space_strategy",
+										"prop_color": "RGB(0, 0, 0)",
+										"prop_font_family": "liberation",
+										"prop_font_size": 9,
+										"prop_font_style": "B"
+									}
+								}
+							]
+						}
+					]
+				},
+				{
+					"value": 3.5,
+					"type": "row",
+					"nodes": [
+						{
+							"value": 12,
+							"type": "col",
+							"nodes": [
+								{
+									"value": "Avenida Teste 42, 4000-001 Porto",
+									"type": "text",
+									"details": {
+										"prop_align": "L",
+										"prop_breakline_strategy": "empty_space_strategy",
+										"prop_color": "RGB(110, 110, 110)",
+										"prop_font_family": "liberation",
+										"prop_font_size": 8
+									}
+								}
+							]
+						}
+					]
+				},
+				{
+					"value": 3,
+					"type": "row",
+					"nodes": [
+						{
+							"value": 0,
+							"type": "col",
+							"details": {
+								"is_max": true
+							}
+						}
+					]
+				},
+				{
+					"value": 6.5,
+					"type": "row",
+					"details": {
+						"prop_background_color": "RGB(242, 242, 242)"
+					},
 					"nodes": [
 						{
 							"value": 2,
@@ -170,7 +306,10 @@
 										"prop_color": "RGB(0, 0, 0)",
 										"prop_font_family": "liberation",
 										"prop_font_size": 8,
-										"prop_font_style": "B"
+										"prop_font_style": "B",
+										"prop_left": 1,
+										"prop_right": 1,
+										"prop_top": 1.5
 									}
 								}
 							]
@@ -188,7 +327,10 @@
 										"prop_color": "RGB(0, 0, 0)",
 										"prop_font_family": "liberation",
 										"prop_font_size": 8,
-										"prop_font_style": "B"
+										"prop_font_style": "B",
+										"prop_left": 1,
+										"prop_right": 1,
+										"prop_top": 1.5
 									}
 								}
 							]
@@ -206,7 +348,10 @@
 										"prop_color": "RGB(0, 0, 0)",
 										"prop_font_family": "liberation",
 										"prop_font_size": 8,
-										"prop_font_style": "B"
+										"prop_font_style": "B",
+										"prop_left": 1,
+										"prop_right": 1,
+										"prop_top": 1.5
 									}
 								}
 							]
@@ -224,7 +369,10 @@
 										"prop_color": "RGB(0, 0, 0)",
 										"prop_font_family": "liberation",
 										"prop_font_size": 8,
-										"prop_font_style": "B"
+										"prop_font_style": "B",
+										"prop_left": 1,
+										"prop_right": 1,
+										"prop_top": 1.5
 									}
 								}
 							]
@@ -242,7 +390,10 @@
 										"prop_color": "RGB(0, 0, 0)",
 										"prop_font_family": "liberation",
 										"prop_font_size": 8,
-										"prop_font_style": "B"
+										"prop_font_style": "B",
+										"prop_left": 1,
+										"prop_right": 1,
+										"prop_top": 1.5
 									}
 								}
 							]
@@ -260,7 +411,10 @@
 										"prop_color": "RGB(0, 0, 0)",
 										"prop_font_family": "liberation",
 										"prop_font_size": 8,
-										"prop_font_style": "B"
+										"prop_font_style": "B",
+										"prop_left": 1,
+										"prop_right": 1,
+										"prop_top": 1.5
 									}
 								}
 							]
@@ -278,7 +432,10 @@
 										"prop_color": "RGB(0, 0, 0)",
 										"prop_font_family": "liberation",
 										"prop_font_size": 8,
-										"prop_font_style": "B"
+										"prop_font_style": "B",
+										"prop_left": 1,
+										"prop_right": 1,
+										"prop_top": 1.5
 									}
 								}
 							]
@@ -286,7 +443,7 @@
 					]
 				},
 				{
-					"value": 5,
+					"value": 4.022222222222222,
 					"type": "row",
 					"nodes": [
 						{
@@ -299,9 +456,12 @@
 									"details": {
 										"prop_align": "L",
 										"prop_breakline_strategy": "empty_space_strategy",
-										"prop_color": "RGB(0, 0, 0)",
+										"prop_color": "RGB(40, 40, 40)",
 										"prop_font_family": "liberation",
-										"prop_font_size": 8
+										"prop_font_size": 8,
+										"prop_left": 1,
+										"prop_right": 1,
+										"prop_top": 1.2
 									}
 								}
 							]
@@ -316,9 +476,12 @@
 									"details": {
 										"prop_align": "L",
 										"prop_breakline_strategy": "empty_space_strategy",
-										"prop_color": "RGB(0, 0, 0)",
+										"prop_color": "RGB(40, 40, 40)",
 										"prop_font_family": "liberation",
-										"prop_font_size": 8
+										"prop_font_size": 8,
+										"prop_left": 1,
+										"prop_right": 1,
+										"prop_top": 1.2
 									}
 								}
 							]
@@ -333,9 +496,12 @@
 									"details": {
 										"prop_align": "R",
 										"prop_breakline_strategy": "empty_space_strategy",
-										"prop_color": "RGB(0, 0, 0)",
+										"prop_color": "RGB(40, 40, 40)",
 										"prop_font_family": "liberation",
-										"prop_font_size": 8
+										"prop_font_size": 8,
+										"prop_left": 1,
+										"prop_right": 1,
+										"prop_top": 1.2
 									}
 								}
 							]
@@ -350,9 +516,12 @@
 									"details": {
 										"prop_align": "R",
 										"prop_breakline_strategy": "empty_space_strategy",
-										"prop_color": "RGB(0, 0, 0)",
+										"prop_color": "RGB(40, 40, 40)",
 										"prop_font_family": "liberation",
-										"prop_font_size": 8
+										"prop_font_size": 8,
+										"prop_left": 1,
+										"prop_right": 1,
+										"prop_top": 1.2
 									}
 								}
 							]
@@ -367,9 +536,12 @@
 									"details": {
 										"prop_align": "R",
 										"prop_breakline_strategy": "empty_space_strategy",
-										"prop_color": "RGB(0, 0, 0)",
+										"prop_color": "RGB(40, 40, 40)",
 										"prop_font_family": "liberation",
-										"prop_font_size": 8
+										"prop_font_size": 8,
+										"prop_left": 1,
+										"prop_right": 1,
+										"prop_top": 1.2
 									}
 								}
 							]
@@ -384,9 +556,12 @@
 									"details": {
 										"prop_align": "R",
 										"prop_breakline_strategy": "empty_space_strategy",
-										"prop_color": "RGB(0, 0, 0)",
+										"prop_color": "RGB(40, 40, 40)",
 										"prop_font_family": "liberation",
-										"prop_font_size": 8
+										"prop_font_size": 8,
+										"prop_left": 1,
+										"prop_right": 1,
+										"prop_top": 1.2
 									}
 								}
 							]
@@ -401,9 +576,12 @@
 									"details": {
 										"prop_align": "R",
 										"prop_breakline_strategy": "empty_space_strategy",
-										"prop_color": "RGB(0, 0, 0)",
+										"prop_color": "RGB(40, 40, 40)",
 										"prop_font_family": "liberation",
-										"prop_font_size": 8
+										"prop_font_size": 8,
+										"prop_left": 1,
+										"prop_right": 1,
+										"prop_top": 1.2
 									}
 								}
 							]
@@ -411,11 +589,42 @@
 					]
 				},
 				{
-					"value": 5,
+					"value": 1.4,
+					"type": "row",
+					"details": {
+						"prop_border_color": "RGB(200, 200, 200)",
+						"prop_border_thickness": 0.2,
+						"prop_border_type": 8
+					},
+					"nodes": [
+						{
+							"value": 0,
+							"type": "col",
+							"details": {
+								"is_max": true
+							}
+						}
+					]
+				},
+				{
+					"value": 2,
 					"type": "row",
 					"nodes": [
 						{
-							"value": 6,
+							"value": 0,
+							"type": "col",
+							"details": {
+								"is_max": true
+							}
+						}
+					]
+				},
+				{
+					"value": 4.5,
+					"type": "row",
+					"nodes": [
+						{
+							"value": 3,
 							"type": "col",
 							"nodes": [
 								{
@@ -427,14 +636,13 @@
 										"prop_color": "RGB(0, 0, 0)",
 										"prop_font_family": "liberation",
 										"prop_font_size": 8,
-										"prop_font_style": "B",
-										"prop_top": 2
+										"prop_font_style": "B"
 									}
 								}
 							]
 						},
 						{
-							"value": 3,
+							"value": 2,
 							"type": "col",
 							"nodes": [
 								{
@@ -446,18 +654,17 @@
 										"prop_color": "RGB(0, 0, 0)",
 										"prop_font_family": "liberation",
 										"prop_font_size": 8,
-										"prop_font_style": "B",
-										"prop_top": 2
+										"prop_font_style": "B"
 									}
 								}
 							]
 						},
 						{
-							"value": 3,
+							"value": 2,
 							"type": "col",
 							"nodes": [
 								{
-									"value": "Imposto",
+									"value": "IVA",
 									"type": "text",
 									"details": {
 										"prop_align": "R",
@@ -465,78 +672,10 @@
 										"prop_color": "RGB(0, 0, 0)",
 										"prop_font_family": "liberation",
 										"prop_font_size": 8,
-										"prop_font_style": "B",
-										"prop_top": 2
+										"prop_font_style": "B"
 									}
 								}
 							]
-						}
-					]
-				},
-				{
-					"value": 4,
-					"type": "row",
-					"nodes": [
-						{
-							"value": 6,
-							"type": "col",
-							"nodes": [
-								{
-									"value": "IVA 23,00% (PT)",
-									"type": "text",
-									"details": {
-										"prop_align": "L",
-										"prop_breakline_strategy": "empty_space_strategy",
-										"prop_color": "RGB(0, 0, 0)",
-										"prop_font_family": "liberation",
-										"prop_font_size": 7
-									}
-								}
-							]
-						},
-						{
-							"value": 3,
-							"type": "col",
-							"nodes": [
-								{
-									"value": "200,00 €",
-									"type": "text",
-									"details": {
-										"prop_align": "R",
-										"prop_breakline_strategy": "empty_space_strategy",
-										"prop_color": "RGB(0, 0, 0)",
-										"prop_font_family": "liberation",
-										"prop_font_size": 7
-									}
-								}
-							]
-						},
-						{
-							"value": 3,
-							"type": "col",
-							"nodes": [
-								{
-									"value": "46,00 €",
-									"type": "text",
-									"details": {
-										"prop_align": "R",
-										"prop_breakline_strategy": "empty_space_strategy",
-										"prop_color": "RGB(0, 0, 0)",
-										"prop_font_family": "liberation",
-										"prop_font_size": 7
-									}
-								}
-							]
-						}
-					]
-				},
-				{
-					"value": 4,
-					"type": "row",
-					"nodes": [
-						{
-							"value": 6,
-							"type": "col"
 						},
 						{
 							"value": 3,
@@ -556,7 +695,7 @@
 							]
 						},
 						{
-							"value": 3,
+							"value": 2,
 							"type": "col",
 							"nodes": [
 								{
@@ -575,12 +714,59 @@
 					]
 				},
 				{
-					"value": 4,
+					"value": 4.5,
 					"type": "row",
 					"nodes": [
 						{
-							"value": 6,
-							"type": "col"
+							"value": 3,
+							"type": "col",
+							"nodes": [
+								{
+									"value": "IVA 23,00% (PT)",
+									"type": "text",
+									"details": {
+										"prop_align": "L",
+										"prop_breakline_strategy": "empty_space_strategy",
+										"prop_color": "RGB(40, 40, 40)",
+										"prop_font_family": "liberation",
+										"prop_font_size": 7.5
+									}
+								}
+							]
+						},
+						{
+							"value": 2,
+							"type": "col",
+							"nodes": [
+								{
+									"value": "200,00 €",
+									"type": "text",
+									"details": {
+										"prop_align": "R",
+										"prop_breakline_strategy": "empty_space_strategy",
+										"prop_color": "RGB(40, 40, 40)",
+										"prop_font_family": "liberation",
+										"prop_font_size": 7.5
+									}
+								}
+							]
+						},
+						{
+							"value": 2,
+							"type": "col",
+							"nodes": [
+								{
+									"value": "46,00 €",
+									"type": "text",
+									"details": {
+										"prop_align": "R",
+										"prop_breakline_strategy": "empty_space_strategy",
+										"prop_color": "RGB(40, 40, 40)",
+										"prop_font_family": "liberation",
+										"prop_font_size": 7.5
+									}
+								}
+							]
 						},
 						{
 							"value": 3,
@@ -600,7 +786,7 @@
 							]
 						},
 						{
-							"value": 3,
+							"value": 2,
 							"type": "col",
 							"nodes": [
 								{
@@ -619,11 +805,11 @@
 					]
 				},
 				{
-					"value": 4,
+					"value": 4.5,
 					"type": "row",
 					"nodes": [
 						{
-							"value": 6,
+							"value": 7,
 							"type": "col"
 						},
 						{
@@ -638,14 +824,14 @@
 										"prop_breakline_strategy": "empty_space_strategy",
 										"prop_color": "RGB(0, 0, 0)",
 										"prop_font_family": "liberation",
-										"prop_font_size": 8,
+										"prop_font_size": 9,
 										"prop_font_style": "B"
 									}
 								}
 							]
 						},
 						{
-							"value": 3,
+							"value": 2,
 							"type": "col",
 							"nodes": [
 								{
@@ -656,7 +842,7 @@
 										"prop_breakline_strategy": "empty_space_strategy",
 										"prop_color": "RGB(0, 0, 0)",
 										"prop_font_family": "liberation",
-										"prop_font_size": 8,
+										"prop_font_size": 9,
 										"prop_font_style": "B"
 									}
 								}
@@ -669,7 +855,20 @@
 					"type": "row",
 					"nodes": [
 						{
-							"value": 12,
+							"value": 0,
+							"type": "col",
+							"details": {
+								"is_max": true
+							}
+						}
+					]
+				},
+				{
+					"value": 5,
+					"type": "row",
+					"nodes": [
+						{
+							"value": 3,
 							"type": "col",
 							"nodes": [
 								{
@@ -680,11 +879,16 @@
 										"prop_breakline_strategy": "empty_space_strategy",
 										"prop_color": "RGB(0, 0, 0)",
 										"prop_font_family": "liberation",
-										"prop_font_size": 8,
-										"prop_top": 2
+										"prop_font_size": 10,
+										"prop_font_style": "B",
+										"prop_top": 0.5
 									}
 								}
 							]
+						},
+						{
+							"value": 9,
+							"type": "col"
 						}
 					]
 				},
@@ -714,7 +918,43 @@
 					]
 				},
 				{
-					"value": 4,
+					"value": 155.075277777,
+					"type": "row",
+					"nodes": [
+						{
+							"value": 12,
+							"type": "col"
+						}
+					]
+				},
+				{
+					"value": 2,
+					"type": "row",
+					"nodes": [
+						{
+							"value": 0,
+							"type": "col",
+							"details": {
+								"is_max": true
+							},
+							"nodes": [
+								{
+									"type": "line",
+									"details": {
+										"prop_color": "RGB(200, 200, 200)",
+										"prop_offset_percent": 5,
+										"prop_orientation": "horizontal",
+										"prop_size_percent": 90,
+										"prop_style": "solid",
+										"prop_thickness": 0.3
+									}
+								}
+							]
+						}
+					]
+				},
+				{
+					"value": 5,
 					"type": "row",
 					"nodes": [
 						{
@@ -729,20 +969,11 @@
 										"prop_breakline_strategy": "empty_space_strategy",
 										"prop_color": "RGB(0, 0, 0)",
 										"prop_font_family": "liberation",
-										"prop_font_size": 7
+										"prop_font_size": 9,
+										"prop_top": 0.5
 									}
 								}
 							]
-						}
-					]
-				},
-				{
-					"value": 173.9975,
-					"type": "row",
-					"nodes": [
-						{
-							"value": 12,
-							"type": "col"
 						}
 					]
 				}

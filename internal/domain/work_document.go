@@ -50,7 +50,7 @@ func IssueWorkDocument(draft *DraftWorkDocument, series *Series, signer Signer, 
 	if err := draft.Validate(); err != nil {
 		return WorkDocument{}, fmt.Errorf("draft: %w", err)
 	}
-	issued, err := issueCommon(&draft.CommonDraftDocument, series, signer, sourceID, now, opts)
+	issued, err := issueCommon(&draft.CommonDraftDocument, &draft.CommonDraftDocument, series, signer, sourceID, now, opts)
 	if err != nil {
 		return WorkDocument{}, err
 	}

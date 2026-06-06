@@ -8,37 +8,33 @@ import (
 
 // buildWorkDocument assembles the maroto document for OR/PF/NE/CM/FC/FO/OU.
 // Work documents always print "Este documento não serve de fatura".
-func buildWorkDocument(wd domain.WorkDocument, m Meta) (core.Maroto, error) {
-	if err := m.validate(); err != nil {
-		return nil, err
-	}
+// footerATCUD: see legalFooterRows.
+func buildWorkDocument(wd domain.WorkDocument, m Meta, footerATCUD bool) (core.Maroto, error) {
 	if wd.QRPayload == "" {
 		return nil, ErrMissingQRPayload
 	}
-	eng, err := newEngine()
-	if err != nil {
-		return nil, err
-	}
 	id := docIdentity{Type: wd.DocumentType, Number: wd.Number, Date: wd.Date, DueDate: wd.PaymentTerms}
-	if err := eng.RegisterHeader(headerRows(m, id, wd.Customer)...); err != nil {
+	eng, err := newDocEngine(m, id, wd.Customer, wd.ATCUD, wd.Hash, footerATCUD)
+	if err != nil {
 		return nil, err
 	}
 	if wd.Status == domain.StatusCancelled {
 		eng.AddRows(cancelledRows(wd.Reason)...)
 	}
 	eng.AddRows(linesTable(wd.Lines)...)
-	eng.AddRows(taxSummaryRows(wd.Totals.Breakdown)...)
-	eng.AddRows(totalsRows(wd.Totals, nil)...)
-	footer, err := legalFooterRows(wd.ATCUD, wd.QRPayload, wd.Hash, m.CertNumber,
-		notInvoiceMention(wd.DocumentType))
+	eng.AddRows(summaryAndTotalsRows(wd.Totals.Breakdown, wd.Lines,
+		salesTotals(wd.Totals, nil, wd.Lines))...)
+	qr, err := qrRows(wd.ATCUD, wd.QRPayload)
 	if err != nil {
 		return nil, err
 	}
-	eng.AddRows(footer...)
+	eng.AddRows(qr...)
 	return eng, nil
 }
 
 // RenderWorkDocument renders an issued work document as PDF bytes.
 func RenderWorkDocument(wd domain.WorkDocument, m Meta) ([]byte, error) {
-	return render(buildWorkDocument(wd, m))
+	return renderAdaptive(func(footerATCUD bool) (core.Maroto, error) {
+		return buildWorkDocument(wd, m, footerATCUD)
+	})
 }

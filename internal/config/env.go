@@ -34,7 +34,10 @@ func loadDotEnv(path string) error {
 			continue
 		}
 		key = strings.TrimSpace(key)
-		val = strings.Trim(strings.TrimSpace(val), `"'`)
+		val = strings.TrimSpace(val)
+		if len(val) >= 2 && (val[0] == '"' || val[0] == '\'') && val[len(val)-1] == val[0] {
+			val = val[1 : len(val)-1]
+		}
 		if _, exists := os.LookupEnv(key); !exists {
 			os.Setenv(key, val)
 		}

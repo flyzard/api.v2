@@ -60,8 +60,10 @@ type Config struct {
 
 	// Timeout is the per-HTTP-request timeout (default 30s).
 	Timeout time.Duration
-	// OperationTimeout caps a whole operation including retries (default 30s).
-	// A caller context deadline takes precedence.
+	// OperationTimeout caps a whole operation including retries. A caller
+	// context deadline takes precedence. Default is derived from Timeout and
+	// Retry: MaxRetries×Timeout + 2×MaxBackoff, so every retry can survive a
+	// full slow failure without being killed by the op deadline.
 	OperationTimeout time.Duration
 
 	// Retry tunes the transient-error backoff. Zero values use defaults
@@ -83,7 +85,8 @@ type Client struct {
 	httpClient *http.Client
 	logger     *slog.Logger
 	limiter    *rate.Limiter
-	certNum    int // parsed Config.SoftwareCertNum
+	certNum    int           // parsed Config.SoftwareCertNum
+	opTimeout  time.Duration // whole-operation deadline, covers all retries
 }
 
 // passwordMaskRe masks WS-Security passwords in SOAP XML for logging.
@@ -128,38 +131,43 @@ func NewClient(config Config) (*Client, error) {
 	if timeout == 0 {
 		timeout = 30 * time.Second
 	}
+	opTimeout := config.OperationTimeout
+	if opTimeout <= 0 {
+		rs := config.Retry.withDefaults()
+		// Every attempt may eat a full request timeout; add the worst-case
+		// backoff schedule so the last retry is not killed by the op deadline.
+		opTimeout = time.Duration(rs.MaxRetries)*timeout + 2*rs.MaxBackoff
+	}
 	logger := config.Logger
 	if logger == nil {
 		logger = slog.Default()
 	}
 
+	tr := http.DefaultTransport.(*http.Transport).Clone()
+	tr.TLSClientConfig = &tls.Config{MinVersion: tls.VersionTLS12}
+	if len(config.Certificate.Certificate) > 0 {
+		tr.TLSClientConfig.Certificates = []tls.Certificate{config.Certificate}
+	}
+
 	return &Client{
 		config: config,
 		httpClient: &http.Client{
-			Transport: &http.Transport{
-				TLSClientConfig: &tls.Config{
-					Certificates: []tls.Certificate{config.Certificate},
-					MinVersion:   tls.VersionTLS12,
-				},
-			},
-			Timeout: timeout,
+			Transport: tr,
+			Timeout:   timeout,
 		},
-		logger:  logger,
-		limiter: rate.NewLimiter(rate.Limit(rateLimit), burst),
-		certNum: certNum,
+		logger:    logger,
+		limiter:   rate.NewLimiter(rate.Limit(rateLimit), burst),
+		certNum:   certNum,
+		opTimeout: opTimeout,
 	}, nil
 }
 
-// ensureDeadline applies OperationTimeout if the caller's context has no deadline.
+// ensureDeadline applies opTimeout if the caller's context has no deadline.
 func (c *Client) ensureDeadline(ctx context.Context) (context.Context, context.CancelFunc) {
 	if _, ok := ctx.Deadline(); ok {
 		return ctx, func() {}
 	}
-	timeout := c.config.OperationTimeout
-	if timeout <= 0 {
-		timeout = defaultOpTimeout
-	}
-	return context.WithTimeout(ctx, timeout)
+	return context.WithTimeout(ctx, c.opTimeout)
 }
 
 // prepareCredentials builds soapCredentials, encrypting if ATPublicKey is set.
@@ -218,7 +226,8 @@ func (c *Client) sendSOAPRequest(ctx context.Context, operation, url string, env
 	}
 	defer resp.Body.Close() //nolint:errcheck // close error non-actionable
 
-	body, err := io.ReadAll(resp.Body)
+	const maxResponseBytes = 1 << 20
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes))
 	if err != nil {
 		return nil, fmt.Errorf("reading response: %w", err)
 	}
@@ -228,9 +237,13 @@ func (c *Client) sendSOAPRequest(ctx context.Context, operation, url string, env
 			slog.String("operation", operation),
 			slog.Duration("duration", time.Since(start)),
 			slog.Int("status", resp.StatusCode))
+		snippet := body
+		if len(snippet) > 2048 {
+			snippet = snippet[:2048]
+		}
 		return nil, Error{
 			Code:    fmt.Sprintf("HTTP_%d", resp.StatusCode),
-			Message: fmt.Sprintf("AT returned status %d: %s", resp.StatusCode, string(body)),
+			Message: fmt.Sprintf("AT returned status %d: %s", resp.StatusCode, snippet),
 		}
 	}
 
@@ -266,14 +279,15 @@ func (c *Client) operResult(ctx context.Context, operation string, r atOperation
 	return c.atError(ctx, operation, r.CodResultOper, r.MsgResultOper)
 }
 
-// parseATDate parses an AT response timestamp, warning and falling back to
-// local time when AT sends an unparseable value.
+// parseATDate parses an AT response timestamp. An unparseable value returns
+// the zero time — recognizably absent — never a fabricated local clock value
+// that could be persisted as a legal registration date.
 func (c *Client) parseATDate(ctx context.Context, field, layout, raw string) time.Time {
 	t, err := time.Parse(layout, raw)
 	if err != nil {
-		c.logger.WarnContext(ctx, "AT date unparseable; falling back to local time",
+		c.logger.WarnContext(ctx, "AT date unparseable; returning zero time",
 			slog.String(field, raw))
-		return time.Now()
+		return time.Time{}
 	}
 	return t
 }

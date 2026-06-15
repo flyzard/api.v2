@@ -181,6 +181,11 @@ func (d *DraftSalesInvoice) UnmarshalJSON(data []byte) error {
 }
 
 func (d *DraftSalesInvoice) Validate() error {
+	if d.GlobalDiscount != nil {
+		if err := d.GlobalDiscount.Validate(); err != nil {
+			return fmt.Errorf("global discount: %w", err)
+		}
+	}
 	if err := d.CommonDraftDocument.Validate(); err != nil {
 		return err
 	}
@@ -338,6 +343,20 @@ func IssueSalesInvoice(draft *DraftSalesInvoice, series *Series, signer Signer, 
 			return SalesInvoice{}, fmt.Errorf("FS gross %s exceeds limit %s", draft.Totals.GrossTotal.Format2DP(), threshold.Format2DP())
 		}
 	}
+	// Withholding reduces AmountPayable (QR field P = O − payable); a sum
+	// above the gross total would print a negative payable. Reject before
+	// issueCommon so the series counter is untouched.
+	if len(draft.WithholdingTax) > 0 {
+		draft.CalculateTotals()
+		var withheld Money
+		for _, w := range draft.WithholdingTax {
+			withheld += w.Amount
+		}
+		if withheld > draft.Totals.GrossTotal {
+			return SalesInvoice{}, fmt.Errorf("withholding total %s exceeds gross total %s",
+				withheld.Format2DP(), draft.Totals.GrossTotal.Format2DP())
+		}
+	}
 	// FR sum check runs before issueCommon: issueCommon advances the series counter
 	// (series.AppendIssue) on success, so a mismatch here must reject before that
 	// mutation to avoid leaving a gap in the sequence.
@@ -368,7 +387,7 @@ func IssueSalesInvoice(draft *DraftSalesInvoice, series *Series, signer Signer, 
 	issued.QRPayload = buildQRPayload(&issued, qr)
 	return SalesInvoice{
 		IssuedDocument:     issued,
-		SalesInvoiceFields: draft.SalesInvoiceFields,
+		SalesInvoiceFields: draft.SalesInvoiceFields.clone(),
 	}, nil
 }
 

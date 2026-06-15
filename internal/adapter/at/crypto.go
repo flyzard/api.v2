@@ -64,6 +64,9 @@ func EncryptATCredentials(password string, timestamp time.Time, atPublicKey *rsa
 	}
 
 	// Encrypt Ks with RSA-PKCS1v15 (the nonce)
+	//lint:ignore SA1019 PKCS#1 v1.5 is AT's mandated wire format for the
+	// WS-Security nonce (like the ECB requirement above) — OAEP would break
+	// the SOAP contract.
 	encKs, err := rsa.EncryptPKCS1v15(rand.Reader, atPublicKey, ks)
 	if err != nil {
 		return "", "", "", fmt.Errorf("encrypting AES key with RSA: %w", err)

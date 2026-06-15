@@ -23,6 +23,8 @@ var (
 	ErrMissingProductNumberCode   = errors.New("product number code is required")
 	ErrInvalidUnit                = errors.New("invalid unit of measure")
 	ErrDateRegression             = errors.New("document date precedes previous issue in series")
+	ErrDateBeforeRegistration     = errors.New("document date precedes series AT registration")
+	ErrMissingRegistrationDate    = errors.New("series is active but has no registration date")
 	ErrSubCentPrecision           = errors.New("money value has sub-cent precision")
 	ErrCancellationDeadlinePassed = errors.New("cancellation deadline has passed; use recovery flow")
 	ErrNotRecoverySeries          = errors.New("recovery documents require a dedicated recovery series")

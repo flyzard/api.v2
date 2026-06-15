@@ -6,6 +6,9 @@
 # are exempt: dedicated inert test keys, not production material.
 /*.pem
 /chave_publica.txt
+/chave_publica_orig.txt
+/certs/
 
 out/*
 .DS_Store
+out-appsmoke/

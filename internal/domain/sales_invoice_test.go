@@ -113,11 +113,16 @@ func TestM16GateStrictOnRecovery(t *testing.T) {
 	qr := QRConfig{IssuerNIF: "500000000", CertificateNumber: "0"}
 
 	ptCustomer := Customer{
-		CustomerID:     uuid.New(),
-		AccountID:      "ACC-PT",
-		CustomerTaxID:  "500000001",
-		CompanyName:    "Cliente PT Lda.",
-		BillingAddress: Address{Country: "PT"},
+		CustomerID:    uuid.New(),
+		AccountID:     "ACC-PT",
+		CustomerTaxID: "500000000",
+		CompanyName:   "Cliente PT Lda.",
+		BillingAddress: Address{
+			AddressDetail: "Rua de Teste 1",
+			City:          "Lisboa",
+			PostalCode:    "1000-001",
+			Country:       "PT",
+		},
 	}
 	series := newSeries()
 	_, err := IntegrateRecoveredSalesInvoice(newDraft(ptCustomer, series), ref, &series, m16StubSigner{}, "tester", now, IssueOptions{}, qr)
@@ -126,11 +131,16 @@ func TestM16GateStrictOnRecovery(t *testing.T) {
 	}
 
 	deCustomer := Customer{
-		CustomerID:     uuid.New(),
-		AccountID:      "ACC-DE",
-		CustomerTaxID:  "DE123456789",
-		CompanyName:    "Kunde GmbH",
-		BillingAddress: Address{Country: "DE"},
+		CustomerID:    uuid.New(),
+		AccountID:     "ACC-DE",
+		CustomerTaxID: "DE123456789",
+		CompanyName:   "Kunde GmbH",
+		BillingAddress: Address{
+			AddressDetail: "Musterstraße 1",
+			City:          "Berlin",
+			PostalCode:    "10115",
+			Country:       "DE",
+		},
 	}
 	series = newSeries()
 	doc, err := IntegrateRecoveredSalesInvoice(newDraft(deCustomer, series), ref, &series, m16StubSigner{}, "tester", now, IssueOptions{}, qr)
@@ -148,11 +158,16 @@ func TestM16GateStrictOnRecovery(t *testing.T) {
 // not only on sales invoices.
 func TestM16GateCoversAllFamilies(t *testing.T) {
 	ptCustomer := Customer{
-		CustomerID:     uuid.New(),
-		AccountID:      "ACC-1",
-		CustomerTaxID:  "500000000",
-		CompanyName:    "Cliente PT Lda.",
-		BillingAddress: Address{Country: "PT"},
+		CustomerID:    uuid.New(),
+		AccountID:     "ACC-1",
+		CustomerTaxID: "500000000",
+		CompanyName:   "Cliente PT Lda.",
+		BillingAddress: Address{
+			AddressDetail: "Rua de Teste 1",
+			City:          "Lisboa",
+			PostalCode:    "1000-001",
+			Country:       "PT",
+		},
 	}
 
 	draft := CommonDraftDocument{}

@@ -2,7 +2,8 @@ package domain
 
 import (
 	"fmt"
-	"sort"
+	"maps"
+	"slices"
 
 	"github.com/google/uuid"
 )
@@ -37,13 +38,7 @@ type AllocationPolicy struct {
 // with the source documents' state: source known, not cancelled, same
 // customer, and cumulative allocations within the source GrossTotal.
 func ValidateAllocations(customerID uuid.UUID, claims map[string]Money, sources map[string]SourceDocState, policy AllocationPolicy) error {
-	keys := make([]string, 0, len(claims))
-	for k := range claims {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys) // deterministic first-offender reporting
-
-	for _, doc := range keys {
+	for _, doc := range slices.Sorted(maps.Keys(claims)) { // deterministic first-offender reporting
 		claim := claims[doc]
 		if claim <= 0 {
 			return fmt.Errorf("allocation against %q must be positive, got %s", doc, claim.Format2DP())

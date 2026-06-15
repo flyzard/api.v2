@@ -13,7 +13,6 @@ const (
 	defaultMaxRetries     = 3
 	defaultInitialBackoff = 500 * time.Millisecond
 	defaultMaxBackoff     = 10 * time.Second
-	defaultOpTimeout      = 30 * time.Second
 )
 
 // RetrySettings tunes the exponential backoff applied to transient AT errors.
@@ -43,6 +42,7 @@ func retryable[T any](ctx context.Context, logger *slog.Logger, rs RetrySettings
 	backoff := rs.InitialBackoff
 
 	var lastErr error
+	sawTransient := false
 	for attempt := range rs.MaxRetries {
 		result, err := fn()
 		if err == nil {
@@ -51,8 +51,13 @@ func retryable[T any](ctx context.Context, logger *slog.Logger, rs RetrySettings
 
 		var atErr Error
 		if !errors.As(err, &atErr) || !atErr.IsRetryable() {
+			if sawTransient && errors.As(err, &atErr) {
+				atErr.Ambiguous = true
+				return result, atErr
+			}
 			return result, err
 		}
+		sawTransient = true
 
 		lastErr = err
 

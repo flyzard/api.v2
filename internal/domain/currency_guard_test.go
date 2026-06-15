@@ -74,7 +74,18 @@ func TestCurrencyDateGuardNormalizesToLisbon(t *testing.T) {
 	salesDraft := func(series Series, cur *Currency) *DraftSalesInvoice {
 		draft := &DraftSalesInvoice{}
 		draft.DocumentType = FT
-		draft.Customer = Customer{CustomerID: uuid.New()}
+		draft.Customer = Customer{
+			CustomerID:    uuid.New(),
+			AccountID:     "ACC-CG",
+			CustomerTaxID: "500000000",
+			CompanyName:   "Cliente CG Lda.",
+			BillingAddress: Address{
+				AddressDetail: "Rua de Teste 1",
+				City:          "Lisboa",
+				PostalCode:    "1000-001",
+				Country:       "PT",
+			},
+		}
 		draft.Series = series
 		draft.Date = now
 		draft.Lines = []DocumentLine{normalVATLine(now)}

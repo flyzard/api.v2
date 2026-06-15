@@ -3,6 +3,7 @@ package at
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/flyzard/invoicing.v2/internal/domain"
 )
@@ -10,6 +11,23 @@ import (
 func nullReg() SeriesRegistration {
 	return SeriesRegistration{
 		SeriesID: "S2026", DocType: domain.FT, SeriesType: "N", InitialSeq: 1, ExpectedStartDate: atT0,
+	}
+}
+
+// TestNullClockInjectable pins that NullClient timestamps are deterministic
+// when a clock is injected — RegistrationDate feeds Series.RegisterWithAT,
+// which the domain's date-before-registration guard compares against fixture
+// dates; a wall-clock fake makes such tests fail nondeterministically.
+func TestNullClockInjectable(t *testing.T) {
+	c := NewNullClient()
+	fixed := atT0
+	c.Now = func() time.Time { return fixed }
+	res, err := c.RegisterSeries(context.Background(), nullReg())
+	if err != nil {
+		t.Fatalf("register: %v", err)
+	}
+	if !res.RegistrationDate.Equal(fixed) {
+		t.Fatalf("RegistrationDate = %v, want injected clock %v", res.RegistrationDate, fixed)
 	}
 }
 
@@ -52,9 +70,16 @@ func TestNullCodesUniquePerSeries(t *testing.T) {
 func TestNullRegisterValidatesSeriesID(t *testing.T) {
 	c := NewNullClient()
 	bad := nullReg()
-	bad.SeriesID = "AT-OOPS"
+	bad.SeriesID = "A/B" // "/" breaks the SAF-T DocumentNumber pattern
 	if _, err := c.RegisterSeries(context.Background(), bad); err == nil {
-		t.Fatal("want validation error for series id starting with AT")
+		t.Fatal("want validation error for series id containing /")
+	}
+	// "AT"-prefixed ids are no longer rejected locally — the claimed reserved
+	// prefix is unconfirmed (docs/series-rules.yaml series-identifier-no-reserved-prefix).
+	ok := nullReg()
+	ok.SeriesID = "AT2026"
+	if _, err := c.RegisterSeries(context.Background(), ok); err != nil {
+		t.Fatalf("AT-prefixed series id rejected: %v", err)
 	}
 }
 
@@ -131,5 +156,18 @@ func TestNullCommunicateInvoice(t *testing.T) {
 	}
 	if res.Code != 0 {
 		t.Errorf("Code = %d, want 0", res.Code)
+	}
+}
+
+func TestNullClient_CancelledTransportGetsNoATDocCode(t *testing.T) {
+	c := NewNullClient()
+	mv := testMovement(t)
+	mv.Status = domain.StatusCancelled
+	res, err := c.CommunicateTransport(context.Background(), testCompany(t), mv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.ATDocCodeID != "" {
+		t.Fatalf("cancelled movement got ATDocCodeID %q; the real sgdtws returns none", res.ATDocCodeID)
 	}
 }

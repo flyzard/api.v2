@@ -22,7 +22,6 @@ import (
 	"log"
 	"log/slog"
 	"os"
-	"strings"
 	"time"
 
 	"github.com/flyzard/invoicing.v2/internal/adapter/at"
@@ -157,10 +156,12 @@ func main() {
 type stubSigner struct{}
 
 func (stubSigner) Sign(canonical string) (string, string, error) {
+	// 4×SHA-256 = 128 raw bytes → 172 base64 chars with padding only at the
+	// end, the exact shape of a real RSA-1024 signature (Hash.Validate
+	// rejects internal '=' padding).
 	sum := sha256.Sum256([]byte(canonical))
-	b64 := base64.StdEncoding.EncodeToString(sum[:])
-	hash := strings.Repeat(b64, 4)[:172]
-	return hash, "1", nil
+	raw := append(append(append(sum[:], sum[:]...), sum[:]...), sum[:]...)
+	return base64.StdEncoding.EncodeToString(raw), "1", nil
 }
 
 // smokeProduct returns a valid domain.Product for smoke fixtures.

@@ -209,6 +209,9 @@ func (m *Money) UnmarshalJSON(data []byte) error {
 	if err := json.Unmarshal(data, &cents); err != nil {
 		return err
 	}
+	if cents > math.MaxInt64/centScale || cents < math.MinInt64/centScale {
+		return fmt.Errorf("money overflows int64: %d cents", cents)
+	}
 	*m = Money(cents * centScale)
 	return nil
 }

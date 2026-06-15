@@ -15,12 +15,24 @@ const (
 	MaxLenHashControl = 70
 )
 
+// hashCharsPattern: standard base64 alphabet with optional padding — the only
+// shape a base64-encoded RSA signature can have.
+var hashCharsPattern = regexp.MustCompile(`^[A-Za-z0-9+/]+={0,2}$`)
+
 func (h Hash) Validate() error {
 	if h == "" {
 		return fmt.Errorf("hash is required")
 	}
 	if len(h) > MaxLenHash {
 		return fmt.Errorf("hash exceeds %d chars: len=%d", MaxLenHash, len(h))
+	}
+	// FourChars reads 1-based position 31; anything shorter cannot be a real
+	// RSA signature and would corrupt QR field Q.
+	if len(h) < 32 {
+		return fmt.Errorf("hash implausibly short for an RSA signature: len=%d", len(h))
+	}
+	if !hashCharsPattern.MatchString(string(h)) {
+		return fmt.Errorf("hash is not base64: %q", h)
 	}
 	return nil
 }

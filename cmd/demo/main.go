@@ -1,25 +1,25 @@
 // Command main runs the 13 scenarios required by the AT certification
 // checklist (§5.1–5.13). Each scenario issues a real document through the
 // domain layer, prints the issued JSON and a one-line summary, and — where
-// applicable — simulates downstream artefacts (PDF, SAF-T rows) that live in
-// Tier-3 modules not yet implemented.
+// applicable — simulates downstream artefacts (PDF, SAF-T rows). The scenarios
+// themselves live in internal/certkit and are shared with cmd/appsmoke; this
+// binary wires a certkit.DomainIssuer (straight to the domain layer).
 package main
 
 import (
 	"fmt"
 	"log"
 	"os"
-	"path/filepath"
 	"time"
 
-	"github.com/flyzard/invoicing.v2/internal/adapter/saft"
 	"github.com/flyzard/invoicing.v2/internal/adapter/signing"
+	"github.com/flyzard/invoicing.v2/internal/certkit"
 	"github.com/flyzard/invoicing.v2/internal/config"
 	"github.com/flyzard/invoicing.v2/internal/domain"
 )
 
 func main() {
-	loc := mustLisbon()
+	loc := certkit.MustLisbon()
 	today := time.Date(2026, 5, 22, 0, 0, 0, 0, loc)
 	clockBase := time.Date(2026, 5, 22, 9, 0, 0, 0, loc)
 	// Previous-month prologue: the certification letter asks for documents
@@ -49,17 +49,14 @@ func main() {
 	// Fixtures (series registration) and the clock start in April so the
 	// prologue documents carry April SystemEntryDates; per-series hash-chain
 	// monotonicity holds because every May document is issued afterwards.
-	f := buildFixtures(prevMonthClock)
-	c := &ctx{
-		f:      f,
-		signer: signer,
-		clock:  newClock(prevMonthClock, time.Minute),
-		store:  newStore(),
-		qr: domain.QRConfig{
-			IssuerNIF:         f.Issuer.NIF,
-			CertificateNumber: cfg.Software.CertificateNumber,
-		},
+	f := certkit.BuildFixtures(prevMonthClock)
+	clock := certkit.NewClock(prevMonthClock, time.Minute)
+	qr := domain.QRConfig{
+		IssuerNIF:         f.Issuer.NIF,
+		CertificateNumber: cfg.Software.CertificateNumber,
 	}
+	iss := certkit.NewDomainIssuer(f, clock, signer, qr)
+	c := certkit.NewCtx(f, clock, certkit.NewStore(), iss)
 
 	fmt.Println("AT Certification Checklist — §5 walkthrough")
 	fmt.Printf("Issuer: %s (NIF %s · EAC %s)\n", f.Issuer.Name, f.Issuer.NIF, f.Issuer.EACCode)
@@ -68,76 +65,27 @@ func main() {
 		prevMonthDay.Format("2006-01-02"), today.Format("2006-01-02"), prevMonthClock.Format("2006-01-02T15:04 MST"))
 	fmt.Printf("Signer: %s\n", signerName)
 
-	scenarioPrevMonth(c, prevMonthDay)
-	c.clock = newClock(clockBase, time.Minute) // jump from April to May
+	certkit.ScenarioPrevMonth(c, prevMonthDay)
+	clock.SetBase(clockBase) // jump from April to May
 
-	scenario51(c, today)
-	scenario52(c, today)
-	scenario53(c, today)
-	scenario54(c, today)
-	scenario55(c, today)
-	scenario56(c, today)
-	scenario57(c, today)
-	scenario58(c, today)
-	scenario59(c, today)
-	scenario510(c, today)
-	scenario511(c, today)
-	scenario512(c, today)
-	scenario513(c, today)
+	certkit.Scenario51(c, today)
+	certkit.Scenario52(c, today)
+	certkit.Scenario53(c, today)
+	certkit.Scenario54(c, today)
+	certkit.Scenario55(c, today)
+	certkit.Scenario56(c, today)
+	certkit.Scenario57(c, today)
+	certkit.Scenario58(c, today)
+	certkit.Scenario59(c, today)
+	certkit.Scenario510(c, today)
+	certkit.Scenario511(c, today)
+	certkit.Scenario512(c, today)
+	certkit.Scenario513(c, today)
 
-	writeSAFT(c, f, cfg.Software, today)
-	writeDocumentPDFs(c, f, cfg.Software)
-	writeChecklist()
+	certkit.WriteSAFT(c, cfg.Software, today, "out")
+	certkit.WriteDocumentPDFs(c, cfg.Software, "out")
+	certkit.WriteChecklist("out")
 
 	fmt.Println()
 	fmt.Println("Done.")
-}
-
-// writeSAFT projects every recorded document into a single SAF-T XML file
-// under out/. The period spans the previous month through the current one so
-// the export carries documents from two different months (cert letter).
-func writeSAFT(c *ctx, f *fixtures, sw config.SoftwareIdentity, now time.Time) {
-	loc := now.Location()
-	firstOfMonth := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, loc)
-	start := firstOfMonth.AddDate(0, -1, 0)
-	end := firstOfMonth.AddDate(0, 1, -1)
-
-	hdr := saft.Header{
-		Issuer: f.Issuer,
-		Software: saft.SoftwareIdentity{
-			ProducerTaxID:     sw.ProducerTaxID,
-			CertificateNumber: sw.CertificateNumber,
-			ProductID:         sw.ProductID(),
-			Version:           sw.Version,
-		},
-		Start:     start,
-		End:       end,
-		CreatedAt: now,
-	}
-	out, err := saft.Export(hdr,
-		c.store.snapshotSales(),
-		c.store.snapshotStock(),
-		c.store.snapshotWork(),
-		c.store.snapshotPayments(),
-	)
-	if err != nil {
-		log.Fatalf("saft export: %v", err)
-	}
-
-	if err := os.MkdirAll("out", 0o755); err != nil {
-		log.Fatalf("mkdir out: %v", err)
-	}
-	path := filepath.Join("out", fmt.Sprintf("SAFT-DEMO-%s-%s.xml", start.Format("2006-01"), end.Format("2006-01")))
-	if err := os.WriteFile(path, out, 0o644); err != nil {
-		log.Fatalf("write %s: %v", path, err)
-	}
-	fmt.Printf("\nSAF-T written: %s (%d bytes)\n", path, len(out))
-}
-
-func mustLisbon() *time.Location {
-	loc, err := time.LoadLocation("Europe/Lisbon")
-	if err != nil {
-		panic("cannot load Europe/Lisbon: " + err.Error())
-	}
-	return loc
 }

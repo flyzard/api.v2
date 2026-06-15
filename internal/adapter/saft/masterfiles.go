@@ -67,7 +67,7 @@ func buildMasterFiles(sales []domain.SalesInvoice, stock []domain.StockMovement,
 	addCust := func(c domain.Customer) error {
 		next := buildCustomer(c)
 		if prev, ok := custs[c.CustomerID]; ok && prev != next {
-			return fmt.Errorf("customer %s has drift: %q vs %q", c.CustomerID, prev.CompanyName, next.CompanyName)
+			return fmt.Errorf("customer %s has drift between documents: %+v vs %+v", c.CustomerID, prev, next)
 		}
 		custs[c.CustomerID] = next
 		return nil
@@ -76,7 +76,7 @@ func buildMasterFiles(sales []domain.SalesInvoice, stock []domain.StockMovement,
 		for _, l := range lines {
 			next := buildProduct(l.Product)
 			if prev, ok := prods[next.ProductCode]; ok && prev != next {
-				return fmt.Errorf("product %q has drift in MasterFiles vs line: description %q vs %q", next.ProductCode, prev.ProductDescription, next.ProductDescription)
+				return fmt.Errorf("product %q has drift between documents: %+v vs %+v", next.ProductCode, prev, next)
 			}
 			prods[next.ProductCode] = next
 			if vat, ok := l.Tax.(domain.VATTax); ok {

@@ -58,6 +58,9 @@ func (d *CommonDraftDocument) Validate() error {
 	if d.Customer.CustomerID == uuid.Nil {
 		return ErrMissingCustomer
 	}
+	if err := d.Customer.Validate(); err != nil {
+		return fmt.Errorf("customer: %w", err)
+	}
 	if d.Series.ID == "" {
 		return ErrMissingSeries
 	}

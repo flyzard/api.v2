@@ -14,8 +14,19 @@ func validPaymentDraft() *PaymentDraft {
 	return &PaymentDraft{
 		Type:            RG,
 		TransactionDate: date,
-		Customer:        Customer{CustomerID: uuid.New()},
-		SourceID:        "tester",
+		Customer: Customer{
+			CustomerID:    uuid.New(),
+			AccountID:     "ACC-RG",
+			CustomerTaxID: "555555550",
+			CompanyName:   "Cliente RG Lda.",
+			BillingAddress: Address{
+				AddressDetail: "Rua de Teste 2",
+				City:          "Porto",
+				PostalCode:    "4000-001",
+				Country:       "PT",
+			},
+		},
+		SourceID: "tester",
 		Lines: []PaymentLine{{
 			LineNumber: 1,
 			SourceDocuments: []SourceDocumentID{{

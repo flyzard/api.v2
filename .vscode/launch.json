@@ -16,6 +16,14 @@
         "mode": "auto",
         "program": "${workspaceFolder}/cmd/demo",
         "cwd": "${workspaceFolder}"
+    },
+    {
+        "name": "AT smoke test",
+        "type": "go",
+        "request": "launch",
+        "mode": "auto",
+        "program": "${workspaceFolder}/cmd/atsmoke",
+        "cwd": "${workspaceFolder}"
     }
   ]
 }

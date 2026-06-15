@@ -16,6 +16,8 @@ import (
 type NullClient struct {
 	mu     sync.Mutex
 	series map[nullKey]*nullSeries
+	// Now overrides the wall clock for deterministic tests. Nil = time.Now.
+	Now func() time.Time
 }
 
 type nullKey struct {
@@ -32,6 +34,13 @@ type nullSeries struct {
 // NewNullClient creates an empty in-memory fake.
 func NewNullClient() *NullClient {
 	return &NullClient{series: map[nullKey]*nullSeries{}}
+}
+
+func (c *NullClient) now() time.Time {
+	if c.Now != nil {
+		return c.Now()
+	}
+	return time.Now()
 }
 
 // Vowels and digits 0/1 excluded to avoid accidental words and visual
@@ -90,7 +99,7 @@ func (c *NullClient) RegisterSeries(_ context.Context, req SeriesRegistration) (
 	if existing, ok := c.series[key]; ok {
 		return &SeriesRegistrationResult{
 			ValidationCode:   existing.code,
-			RegistrationDate: time.Now(),
+			RegistrationDate: c.now(),
 			Status:           existing.status,
 		}, nil
 	}
@@ -103,7 +112,7 @@ func (c *NullClient) RegisterSeries(_ context.Context, req SeriesRegistration) (
 
 	return &SeriesRegistrationResult{
 		ValidationCode:   code,
-		RegistrationDate: time.Now(),
+		RegistrationDate: c.now(),
 		Status:           domain.SeriesActive,
 	}, nil
 }
@@ -164,6 +173,15 @@ func (c *NullClient) CommunicateTransport(_ context.Context, _ domain.Company, m
 	if !mv.DocumentType.IsTransport() {
 		return nil, fmt.Errorf("null AT client: %s is not a transport document", mv.Number.Format())
 	}
+	// Mirror sgdtws: a cancellation voids an already-communicated document and
+	// gets no new ATDocCodeID (see Client.CommunicateTransport).
+	if mv.Status == domain.StatusCancelled {
+		return &TransportResult{
+			DocumentNumber: mv.Number.Format(),
+			ATCUD:          string(mv.ATCUD),
+			Message:        "OK",
+		}, nil
+	}
 	return &TransportResult{
 		ATDocCodeID:    "ATDC" + deriveCodeFromKey("transport_"+mv.Number.Format()),
 		DocumentNumber: mv.Number.Format(),
@@ -177,7 +195,7 @@ func (c *NullClient) CommunicateInvoice(_ context.Context, _ domain.Company, inv
 	if !inv.DocumentType.IsSales() {
 		return nil, fmt.Errorf("null AT client: %s is not a sales document", inv.Number.Format())
 	}
-	return &InvoiceResult{Code: 0, Message: "Documento registado com sucesso.", OperationDate: time.Now()}, nil
+	return &InvoiceResult{Code: 0, Message: "Documento registado com sucesso.", OperationDate: c.now()}, nil
 }
 
 // Compile-time interface checks.

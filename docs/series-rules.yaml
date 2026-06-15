@@ -30,7 +30,10 @@ _how_to_apply:
     validation_code: code assigned by AT for the series (first part of ATCUD)
     atcud: value stored in SAF-T / encoded in QR, e.g. "TES123TE-123"
     atcud_printed: human-readable form on the document, e.g. "ATCUD:TES123TE-123"
-    processing_means: programa de faturação | portal | tipografia | outro meio eletrónico
+    processing_means: >
+      programa de faturação | portal | tipografia | outro meio eletrónico.
+      NOT the same concept as domain.ProcessingMeans ("N"/"A" = normal vs recovery series) —
+      same name, different axis.
     has_agreement: for self-billing, whether a prior acordo exists
 
 # ── A. Document number & series identifier format ────────────────────────────
@@ -74,6 +77,21 @@ rules:
     note: >
       Claim that registarSerie rejects "AT" is unsubstantiated across all accessible sources.
       Resolve ONLY via the series webservice WSDL or a test-environment registarSerie call.
+      Reconciled 2026-06: domain.ValidateSeries no longer hard-rejects "AT"-prefixed ids;
+      registarSerie is the authority.
+
+  - id: series-identifier-length
+    statement: The series_id segment is at most 20 characters (and at least 1).
+    check: length(series_id) >= 1 and length(series_id) <= 20
+    type: deterministic
+    severity: blocking
+    since: 2023-01-01
+    source: AT SeriesWS registarSerie request schema (serie field)
+    status: partial
+    note: >
+      Enforced as blocking by domain.ValidateSeries. Limit taken from the SeriesWS
+      request constraints; confirm exact bound against the WSDL when convenient.
+      The 60-char DocumentNumber cap caps it further in practice.
 
   - id: sequential-numeric-only
     statement: The sequential number (after "/") is exclusively numeric.
@@ -102,7 +120,12 @@ rules:
     since: 2023-01-01
     source: Portaria 195/2020 art. 4.º + QR/ATCUD technical spec
     status: partial
-    note: Exact allowed/excluded character set is in the technical spec; "uppercase only" is third-party reported, not confirmed from the primary source. Replace the class when confirmed.
+    note: >
+      Exact allowed/excluded character set is in the technical spec; "uppercase only" is
+      third-party reported, not confirmed from the primary source. Replace the class when confirmed.
+      Reconciled 2026-06: domain.ValidateATCode keeps this blocking anyway — the confirmed/blocking
+      atcud-saft-qr-format pattern embeds [0-9A-Z]{8,} for the code part, so a code outside that
+      set would later produce an ATCUD violating a confirmed rule.
 
   - id: validation-code-assigned-not-constructed
     statement: The code is assigned by AT; never generate or mutate it — only store/validate transcription.
@@ -181,6 +204,10 @@ rules:
     since: 2023-01-01
     source: Portaria 195/2020 art. 5.º; DL 28/2019 art. 7.º
     status: confirmed
+    note: >
+      Enforced 2026-06 in validateIssueContext: document date must not precede the series'
+      RegistrationDate (calendar-day, Europe/Lisbon). Recovery issuance is exempt — recovered
+      documents carry original dates that legally precede the recovery series' registration.
 
   - id: validation-code-key
     statement: A distinct validation code exists per (series_id + doc_type + processing_means).

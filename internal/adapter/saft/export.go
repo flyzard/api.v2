@@ -142,11 +142,30 @@ const xmlDeclarationWin1252 = `<?xml version="1.0" encoding="Windows-1252"?>` + 
 
 // transcodeWin1252 converts a UTF-8 buffer to Windows-1252. This is the sole
 // enforcement point for the AT charset invariant (Portaria 363/2010 §R-G7) —
-// an error here means a text field carried a rune unmappable in Windows-1252.
+// an error here means a text field carried a rune unmappable in Windows-1252,
+// and the message names the first offender so the operator can find the field.
 func transcodeWin1252(utf8 []byte) ([]byte, error) {
 	out, err := charmap.Windows1252.NewEncoder().Bytes(utf8)
 	if err != nil {
-		return nil, fmt.Errorf("transcode UTF-8 → Windows-1252: %w", err)
+		return nil, fmt.Errorf("transcode UTF-8 → Windows-1252: %w; %s", err, win1252Offender(utf8))
 	}
 	return out, nil
+}
+
+// win1252Offender locates the first rune Windows-1252 cannot represent and
+// describes it with surrounding context. U+FFFD means encoding/xml already
+// replaced an XML-invalid control character upstream.
+func win1252Offender(b []byte) string {
+	for i, r := range string(b) {
+		if _, ok := charmap.Windows1252.EncodeRune(r); !ok {
+			start := max(0, i-60)
+			end := min(len(b), i+60)
+			note := ""
+			if r == '�' {
+				note = " (U+FFFD: an XML-invalid character was replaced upstream by the XML encoder)"
+			}
+			return fmt.Sprintf("first unmappable rune %q at byte %d%s, context: %q", r, i, note, b[start:end])
+		}
+	}
+	return "offending rune not located"
 }

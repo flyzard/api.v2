@@ -3,6 +3,7 @@ package at
 import (
 	"context"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -339,5 +340,17 @@ func TestNewClientDefaultsRateLimiter(t *testing.T) {
 	}
 	if c.certNum != 9999 {
 		t.Errorf("certNum = %d, want 9999", c.certNum)
+	}
+}
+
+func TestParseATDate_GarbageYieldsZeroTime(t *testing.T) {
+	c := &Client{logger: slog.New(slog.DiscardHandler)}
+	got := c.parseATDate(context.Background(), "dataRegisto", "2006-01-02", "not-a-date")
+	if !got.IsZero() {
+		t.Fatalf("fabricated a date for garbage input: %v", got)
+	}
+	ok := c.parseATDate(context.Background(), "dataRegisto", "2006-01-02", "2026-06-11")
+	if ok.IsZero() {
+		t.Fatal("valid date rejected")
 	}
 }

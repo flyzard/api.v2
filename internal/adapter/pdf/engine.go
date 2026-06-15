@@ -3,6 +3,7 @@ package pdf
 import (
 	"bytes"
 	_ "embed"
+	"errors"
 
 	"github.com/johnfercher/maroto/v2"
 	"github.com/johnfercher/maroto/v2/pkg/config"
@@ -95,7 +96,14 @@ func renderAdaptive(build func(footerATCUD bool) (core.Maroto, error)) ([]byte, 
 	if err != nil {
 		return nil, err
 	}
-	if pageCount(b) <= 1 {
+	n := pageCount(b)
+	if n == 0 {
+		// The pages tree was not found — pagination is unknown, so the
+		// ATCUD-on-every-page rule (Despacho 412/2020-XXII) cannot be
+		// guaranteed. Refusing beats silently printing a non-compliant PDF.
+		return nil, errors.New("pdf: page count not found in generated PDF")
+	}
+	if n == 1 {
 		return b, nil
 	}
 	return render(build(true))

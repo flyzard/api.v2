@@ -1,12 +1,12 @@
 # CLAUDE.md
 
-Guide Claude Code (claude.ai/code) for work in this repo.
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## What this is
 
-Go library. Issue Portuguese (AT-certified) tax documents, export as SAF-T (PT) XML, communicate series/invoices/transport docs to AT webservices. Pure domain + adapters, run by demo/smoke binaries. Evolving milestone-by-milestone into multi-tenant REST API per `ARCHITECTURE_PLAN.md` (Ports & Adapters; M0 restructure done, M1+ pending).
+Go library + application service layer. Issue Portuguese (AT-certified) tax documents, render them as PDF, export as SAF-T (PT) XML, communicate series/invoices/transport docs to AT webservices. Pure domain + adapters + a multi-tenant `app` service layer (Ports & Adapters), run by demo/smoke binaries — a REST transport on top is the direction of travel. Design specs live in `docs/superpowers/specs/`, step-by-step implementation plans in `docs/superpowers/plans/`.
 
-**Git policy: user owns all version control. Never run git commands (commit, branch, etc.) unless explicitly asked.** Where plan says "Checkpoint", stop, let user commit.
+**Git policy: user owns all version control. Never run git commands (commit, branch, etc.) unless explicitly asked.** Where a plan says "Checkpoint", stop, let user commit.
 
 ## Commands
 
@@ -22,7 +22,7 @@ No Makefile, no linter config — `gofmt` only. Demo reads `.env` (optional); `A
 
 ## Architecture
 
-Three layers, strict dependency direction: `config` / `adapter/*` → `domain`. Domain imports nothing from adapters.
+Strict dependency direction: `cmd/*` → `internal/app` → `internal/adapter/*` / `internal/config` → `internal/domain`. Domain imports nothing from adapters or app; adapters import only domain; `app` orchestrates domain + adapters behind ports.
 
 ### `internal/domain` — pure business logic
 
@@ -32,6 +32,21 @@ Three layers, strict dependency direction: `config` / `adapter/*` → `domain`. 
 - **Recovery** (`recovery.go`, explained in `docs/recovery.md`): re-issue documents created outside certified system (manual `'M'` / backup `'D'`), provenance encoded in `HashControl` + `SourceBilling`.
 - **Allocations** (`allocation.go`): receipt lines settling invoices / NC-ND lines rectifying them. Domain stays pure — caller fetches `SourceDocState` from persistence, `ValidateAllocations` applies rules; `AllocationPolicy` relaxes checks with no legal basis (unknown pre-system sources, rappel NCs over ceiling).
 - Money is integer cents (`money.go`); dates/timestamps Europe/Lisbon.
+
+### `internal/app` — multi-tenant application service layer
+
+Orchestrates domain + adapters behind persistence/infra **ports** (`ports.go`): `UnitOfWork.Run(ctx, tenantID, fn)` hands the callback a tenant-bound `RepoSet` (Series/Documents/Outbox/Idempotency repos); `OutboxQueue` is the worker-side cross-tenant port; `TenantStore`, `Clock`, `ATClientFactory` complete the wiring surface `Deps` (`app.go`). `New(Deps)` returns the five services.
+
+- **`InvoicingService`** (`invoicing.go`): the issuance spine. Per `(tenant, series)` in-process mutex (`locks.go`) serializes the hash chain on the fast path; optimistic `Series.Version` check + up-to-3 retries is the cross-process backstop. Client-supplied idempotency key + payload fingerprint dedupes retries (same key, different payload → conflict). Document save, series advance, comm-task enqueue, and idempotency record all commit in one transaction.
+- **`CommService`** (`communication.go`): drains the AT-communication outbox. `DrainOnce` is the unit of work; the ticker loop belongs in the composition root. Exponential backoff, terminal failure after `maxCommAttempts`. Invoice communication is a per-tenant DL 28/2019 election (`Tenant.CommMode`).
+- **`SeriesService`** (`series.go`): series lifecycle vs AT SeriesWS. AT-mutating operations never hold a transaction across the SOAP call.
+- **`ExportService`** / **`QueryService`** (`export.go`, `query.go`): SAF-T export for a period; read side (fetch/list, comm status join, PDF rendering).
+- **Errors** (`errors.go`): services return only `*app.Error{Kind, Err}`; `Kind` maps to HTTP status (`KindInvalid`/`NotFound`/`Conflict`/`AT`/`Internal`). Repos return sentinel `ErrNotFound`/`ErrVersionConflict`/`ErrAlreadyExists`; services translate.
+- **`Tenant`** (`tenant.go`): one issuing company — `domain.Company`, AT sub-user credentials, `CommMode`, holiday calendar, FS limits. The signing key is NOT per-tenant; it's the global software-producer key (`Deps.Signer`, Portaria 363/2010).
+
+### `internal/adapter/memstore` — in-memory ports implementation
+
+Implements the `app` persistence ports for tests/demo. Tenant-first map keys (one tenant can never touch another's rows); `Run` holds one mutex for the whole transaction and snapshot/restores maps on error for all-or-nothing semantics. Has a `failSeriesSaveOnce` hook to exercise the service retry path.
 
 ### `internal/adapter/saft` — SAF-T (PT) projector
 
@@ -46,6 +61,14 @@ Client side of three AT webservices: **SeriesWS** (registar/finalizar/anular/con
 - `crypto.go`: WS-Security username token — password AES-128-ECB encrypted under nonce, nonce RSA-encrypted with AT cipher public key. ECB is AT's requirement, not a bug.
 - `retry.go`: exponential backoff on `Error.IsRetryable()` codes only.
 - Test vs production endpoints are `at.Test*URL` / `at.Production*URL` constants on `at.Config` — switch-over is config, not code. Production migration steps + gotchas in `docs/at-production.md` (everything live-verified against test env 2026-06-05).
+
+### `internal/adapter/pdf` — PDF projector
+
+Renders issued documents as A4 PDFs meeting AT print requirements (QR ≥30×30 mm, ATCUD above QR, signature characters + "Processado por programa certificado", per-family legal mentions). Pure projector like `saft` — consumes immutable domain values, never mutates. Golden-file tests in `testdata/`.
+
+### `internal/adapter/qrimage` — QR rasterizer
+
+Rasterizes frozen `IssuedDocument.QRPayload` strings to PNG. Enforces symbol version ≥ 9 and error-correction level exactly M **unconditionally** — a previous AT certification trial was rejected for a version below 9 (QR libraries auto-pick the smallest version that fits). Don't relax these invariants.
 
 ### `internal/adapter/signing` — RSA-SHA1 signer (Portaria 363/2010 Art. 5)
 
@@ -66,5 +89,6 @@ Exercises the AT SeriesWS **test environment** live: register throwaway series, 
 ## Invariants to respect
 
 - Issued documents immutable; per-series hash chain must never break. Changing canonical-string or projector output for already-tested cases = regulatory bug, not refactor.
-- Plan's persistence decision (M2+): stored SAF-T fragments are frozen record-of-truth, never regenerated.
-- `ARCHITECTURE_PLAN.md` is roadmap — implement milestone-by-milestone, checkbox steps, stop at Checkpoints.
+- Persistence decision: stored SAF-T fragments are frozen record-of-truth, never regenerated.
+- QR images: version ≥ 9, ECC level M — AT rejected a prior trial over this.
+- Work proceeds plan-by-plan from `docs/superpowers/plans/` — checkbox steps, stop at Checkpoints for user commits.

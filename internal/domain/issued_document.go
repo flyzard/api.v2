@@ -184,6 +184,26 @@ func validateIssueContext(series *Series, docType DocumentType, sourceID string,
 	if series.DocType != docType {
 		return fmt.Errorf("series doc type %s does not match draft %s", series.DocType, docType)
 	}
+	// series-communicated-before-use (Portaria 195/2020 art. 5.º): normal
+	// documents cannot be dated before the series was communicated to AT.
+	// Recovery is exempt — it re-issues documents whose original dates legally
+	// precede the recovery series' registration. Both operands need explicit
+	// Lisbon normalization (unlike the ErrDateRegression guards, whose LastDate
+	// is Lisbon-stamped by AppendIssue, RegistrationDate is caller-provided —
+	// same rationale as the currency-rate date check in sales_invoice.go).
+	if !recovering {
+		if series.RegistrationDate == nil {
+			// CanIssue + RegisterWithAT make this unreachable in-memory; a
+			// rehydrated Series can lose the date (json omitempty). Fail
+			// closed rather than silently skip the regulatory check.
+			return fmt.Errorf("%w: series %q", ErrMissingRegistrationDate, series.ID)
+		}
+		regDay := dateOnly(series.RegistrationDate.In(lisbonLocation))
+		if dateOnly(refDate.In(lisbonLocation)).Before(regDay) {
+			return fmt.Errorf("%w: %s < %s", ErrDateBeforeRegistration,
+				refDate.Format("2006-01-02"), regDay.Format("2006-01-02"))
+		}
+	}
 	if now.Before(refDate) {
 		return fmt.Errorf("system entry date %s precedes draft date %s", now, refDate)
 	}
@@ -207,20 +227,20 @@ func dateOnly(t time.Time) time.Time {
 	return time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, t.Location())
 }
 
-// nextDocIdentity derives the next sequence number and its DocNumber/ATCUD
-// from the series state. Shared by issueCommon and IssuePayment so the
-// seq == LastNum+1 contract (see Series.AppendIssue) has a single source.
-func nextDocIdentity(series *Series, docType DocumentType) (int, DocNumber, ATCUD, error) {
+// nextDocIdentity derives the next DocNumber/ATCUD from the series state.
+// Shared by issueCommon and IssuePayment so the seq == LastNum+1 contract
+// (see Series.AppendIssue) has a single source; callers read Number.Seq.
+func nextDocIdentity(series *Series, docType DocumentType) (DocNumber, ATCUD, error) {
 	seq := series.LastNum + 1
 	number, err := NewDocNumber(docType, series.ID, seq)
 	if err != nil {
-		return 0, DocNumber{}, "", err
+		return DocNumber{}, "", err
 	}
 	atcud, err := NewATCUD(*series, seq)
 	if err != nil {
-		return 0, DocNumber{}, "", err
+		return DocNumber{}, "", err
 	}
-	return seq, number, atcud, nil
+	return number, atcud, nil
 }
 
 // totalsCalculator lets a family draft hook its own totals computation into
@@ -276,7 +296,7 @@ func issueCommon(draft *CommonDraftDocument, calc totalsCalculator, series *Seri
 
 	calc.CalculateTotals()
 
-	seq, number, atcud, err := nextDocIdentity(series, draft.DocumentType)
+	number, atcud, err := nextDocIdentity(series, draft.DocumentType)
 	if err != nil {
 		return IssuedDocument{}, err
 	}
@@ -302,6 +322,10 @@ func issueCommon(draft *CommonDraftDocument, calc totalsCalculator, series *Seri
 
 	core := draft.DocumentCore
 	core.Date = date
+	core.Lines = cloneLines(core.Lines)
+	core.PaymentTerms = clonePtr(core.PaymentTerms)
+	core.Totals.Breakdown = slices.Clone(core.Totals.Breakdown)
+	core.Customer = core.Customer.clone()
 	issued := IssuedDocument{
 		Number:          number,
 		ATCUD:           atcud,
@@ -315,7 +339,7 @@ func issueCommon(draft *CommonDraftDocument, calc totalsCalculator, series *Seri
 		DocumentCore:    core,
 	}
 
-	series.AppendIssue(seq, hashStr, date, sysEntry)
+	series.AppendIssue(number.Seq, hashStr, date, sysEntry)
 
 	return issued, nil
 }
@@ -328,22 +352,29 @@ func issueCommon(draft *CommonDraftDocument, calc totalsCalculator, series *Seri
 // QRPayload is intentionally NOT mutated — the QR encodes original issuance
 // state and is reprinted verbatim regardless of subsequent status changes.
 func (d *IssuedDocument) Cancel(reason string, at time.Time) error {
-	switch d.Status {
-	case StatusNormal, StatusSelfBilled, StatusThirdParty:
-		// permitted source states
-	case StatusCancelled:
+	// F (Billed) and R (Summary) are terminal states from the AT-cert perspective.
+	return applyCancel(&d.Status, &d.Reason, &d.StatusDate, d.Date, reason, at,
+		StatusNormal, StatusSelfBilled, StatusThirdParty)
+}
+
+// applyCancel is the shared cancellation transition for issued documents and
+// payments: permitted-source check, reason/deadline rules, then the Status/
+// Reason/StatusDate stamp. allowed lists the statuses cancellation may start
+// from; anchor is the date the e-Fatura deadline counts from.
+func applyCancel(status *DocumentStatus, reason *string, statusDate *time.Time,
+	anchor time.Time, cancelReason string, at time.Time, allowed ...DocumentStatus) error {
+	if *status == StatusCancelled {
 		return fmt.Errorf("document already cancelled")
-	default:
-		// F (Billed) and R (Summary) cannot be cancelled in isolation —
-		// they're terminal states from the AT-cert perspective.
-		return fmt.Errorf("cannot cancel from status %q", d.Status)
 	}
-	if err := validateCancellation(reason, d.Date, at); err != nil {
+	if !slices.Contains(allowed, *status) {
+		return fmt.Errorf("cannot cancel from status %q", *status)
+	}
+	if err := validateCancellation(cancelReason, anchor, at); err != nil {
 		return err
 	}
-	d.Status = StatusCancelled
-	d.Reason = reason
-	d.StatusDate = at.In(lisbonLocation)
+	*status = StatusCancelled
+	*reason = cancelReason
+	*statusDate = at.In(lisbonLocation)
 	return nil
 }
 
@@ -364,12 +395,8 @@ func validateCancellation(reason string, anchor, at time.Time) error {
 
 func cancellationDeadline(docDate time.Time) time.Time {
 	lisbon := docDate.In(lisbonLocation)
-	year, month := lisbon.Year(), lisbon.Month()+1
-	if month > time.December {
-		month = time.January
-		year++
-	}
-	return time.Date(year, month, 5, 23, 59, 59, 0, lisbonLocation)
+	// time.Date normalizes month 13 to January of the following year.
+	return time.Date(lisbon.Year(), lisbon.Month()+1, 5, 23, 59, 59, 0, lisbonLocation)
 }
 
 type HolidayCalendar interface {
@@ -399,6 +426,12 @@ func workingDaysBetween(start, end time.Time, cal HolidayCalendar) int {
 			continue
 		}
 		days++
+		// The only caller compares against the CIVA 5-working-day cap; far past
+		// it, the exact count is irrelevant — stop scanning (a draft mistakenly
+		// dated years back must not iterate thousands of days).
+		if days > 30 {
+			return days
+		}
 	}
 	return days
 }

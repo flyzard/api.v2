@@ -20,6 +20,26 @@ func registeredSeries(t *testing.T) Series {
 	return s
 }
 
+// TestValidateSeriesIdentifier pins docs/series-rules.yaml §A:
+// series-identifier-charset (blocking — no space, "/" or "^"; a "/" in the
+// series id would break the SAF-T DocumentNumber pattern) and
+// series-identifier-no-reserved-prefix (unconfirmed — "AT"-prefixed ids must
+// NOT be hard-rejected locally; AT's registarSerie is the authority).
+func TestValidateSeriesIdentifier(t *testing.T) {
+	valid := []string{"S2026", "A2026.B", "A-1_B.2", "AT2026", "at2026"}
+	for _, id := range valid {
+		if err := ValidateSeries(id); err != nil {
+			t.Errorf("ValidateSeries(%q) = %v, want nil", id, err)
+		}
+	}
+	invalid := []string{"", "A/B", "A B", "A^B", "Á2026", "A..B", "ABCDEFGHIJKLMNOPQRSTU"}
+	for _, id := range invalid {
+		if err := ValidateSeries(id); err == nil {
+			t.Errorf("ValidateSeries(%q) = nil, want error", id)
+		}
+	}
+}
+
 func TestUnregisteredSeriesCannotIssue(t *testing.T) {
 	s, err := NewSeries("S2026", FT)
 	if err != nil {

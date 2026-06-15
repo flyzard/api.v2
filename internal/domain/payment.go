@@ -3,6 +3,7 @@ package domain
 import (
 	"encoding/json"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/google/uuid"
@@ -271,6 +272,9 @@ func (d *PaymentDraft) Validate() error {
 	if d.Customer.CustomerID == uuid.Nil {
 		return ErrMissingCustomer
 	}
+	if err := d.Customer.Validate(); err != nil {
+		return fmt.Errorf("customer: %w", err)
+	}
 	if d.SourceID == "" {
 		return fmt.Errorf("source_id is required")
 	}
@@ -357,7 +361,7 @@ func IssuePayment(draft *PaymentDraft, series *Series, now time.Time, totals Pay
 		return Payment{}, fmt.Errorf("totals must be non-negative")
 	}
 
-	seq, number, atcud, err := nextDocIdentity(series, draft.Type)
+	number, atcud, err := nextDocIdentity(series, draft.Type)
 	if err != nil {
 		return Payment{}, err
 	}
@@ -373,17 +377,17 @@ func IssuePayment(draft *PaymentDraft, series *Series, now time.Time, totals Pay
 		Status:          StatusNormal,
 		StatusDate:      sysEntry,
 		SourcePayment:   sourcePayment,
-		Methods:         draft.Methods,
+		Methods:         slices.Clone(draft.Methods),
 		SourceID:        draft.SourceID,
 		SystemEntryDate: sysEntry,
-		Customer:        draft.Customer,
-		Lines:           draft.Lines,
+		Customer:        draft.Customer.clone(),
+		Lines:           clonePaymentLines(draft.Lines),
 		PaymentTotals:   totals,
-		Currency:        draft.Currency,
-		WithholdingTax:  draft.WithholdingTax,
+		Currency:        clonePtr(draft.Currency),
+		WithholdingTax:  slices.Clone(draft.WithholdingTax),
 	}
 
-	series.AppendIssue(seq, "", txDate, sysEntry)
+	series.AppendIssue(number.Seq, "", txDate, sysEntry)
 
 	return p, nil
 }
@@ -394,19 +398,6 @@ func IssuePayment(draft *PaymentDraft, series *Series, now time.Time, totals Pay
 // (familyReceipt status set); there is no recovery flow past the deadline
 // because receipts carry no HashControl.
 func (p *Payment) Cancel(reason string, at time.Time) error {
-	switch p.Status {
-	case StatusNormal:
-		// only permitted source state for receipts
-	case StatusCancelled:
-		return fmt.Errorf("payment already cancelled")
-	default:
-		return fmt.Errorf("cannot cancel from status %q", p.Status)
-	}
-	if err := validateCancellation(reason, p.TransactionDate, at); err != nil {
-		return err
-	}
-	p.Status = StatusCancelled
-	p.Reason = reason
-	p.StatusDate = at.In(lisbonLocation)
-	return nil
+	return applyCancel(&p.Status, &p.Reason, &p.StatusDate, p.TransactionDate, reason, at,
+		StatusNormal)
 }

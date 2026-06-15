@@ -19,6 +19,12 @@ import (
 type Error struct {
 	Code    string
 	Message string
+	// Ambiguous marks a deterministic AT rejection received after a transient
+	// failure on the same operation. The earlier attempt may have been
+	// committed by AT with its response lost, so this rejection may actually
+	// be a duplicate-refusal of a success. Callers must reconcile against AT
+	// (or a human must) before treating it as a definitive failure.
+	Ambiguous bool
 }
 
 func (e Error) Error() string { return fmt.Sprintf("AT error %s: %s", e.Code, e.Message) }

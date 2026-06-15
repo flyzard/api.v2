@@ -12,7 +12,7 @@ func gtDraft(t *testing.T, series Series, now time.Time, startOffset time.Durati
 	addr := mustVal(NewAddress("Armazem 1", "Lisboa", "1000-001", "PT"))
 	draft := &DraftStockMovement{}
 	draft.DocumentType = GT
-	draft.Customer = Customer{CustomerID: mustVal(NewCustomer("ACC-1", "555555550", "Cliente Lda", addr, false)).CustomerID}
+	draft.Customer = *mustVal(NewCustomer("ACC-1", "555555550", "Cliente Lda", addr, false))
 	draft.Date = now
 	draft.Series = series
 	draft.MovementStartTime = now.Add(startOffset)

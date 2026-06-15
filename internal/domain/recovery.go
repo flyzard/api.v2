@@ -37,6 +37,13 @@ func (r RecoveredRef) Validate() error {
 	if r.OriginalSeries == "" {
 		return fmt.Errorf("original series is required")
 	}
+	// Mirror ValidateSeries' length cap: the original was issued under the
+	// same AT series rules, and an unbounded série would push controlFor's
+	// output past the 70-char HashControl XSD limit (found by
+	// FuzzRecoveredRefControl).
+	if len(r.OriginalSeries) > 20 {
+		return fmt.Errorf("original series exceeds 20 chars: %q", r.OriginalSeries)
+	}
 	// SAF-T XSD HashControl série token is [^/^ ]+ — no slash, caret, or space.
 	if strings.ContainsAny(r.OriginalSeries, "/^ ") {
 		return fmt.Errorf("original series cannot contain '/', '^' or space: %q", r.OriginalSeries)

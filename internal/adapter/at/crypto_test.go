@@ -162,7 +162,7 @@ func TestEncryptATCredentials(t *testing.T) {
 	if err != nil {
 		t.Fatalf("decoding nonce: %v", err)
 	}
-	//nolint:staticcheck // AT spec requires PKCS1v15
+	//lint:ignore SA1019 AT spec requires PKCS#1 v1.5 — test mirrors the wire format.
 	ks, err := rsa.DecryptPKCS1v15(rand.Reader, privKey, nonceBytes)
 	if err != nil {
 		t.Fatalf("decrypting nonce: %v", err)

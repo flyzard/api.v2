@@ -3,7 +3,6 @@ package domain
 import (
 	"fmt"
 	"regexp"
-	"strings"
 	"time"
 )
 
@@ -42,17 +41,19 @@ type Series struct {
 	ProcessingMeans ProcessingMeans `json:"processing_means"`
 }
 
-var seriesCharset = regexp.MustCompile(`^[A-Za-z0-9]+(?:[._\-/][A-Za-z0-9]+)*$`)
+// seriesCharset excludes space, "/" and "^" (they would break the SAF-T
+// DocumentNumber pattern — docs/series-rules.yaml series-identifier-charset)
+// and sticks to the safe subset AT communication accepts. No reserved-prefix
+// check: the claimed "AT" prefix rejection is unconfirmed (see
+// series-identifier-no-reserved-prefix); registarSerie is the authority.
+var seriesCharset = regexp.MustCompile(`^[A-Za-z0-9]+(?:[._-][A-Za-z0-9]+)*$`)
 
 func ValidateSeries(id string) error {
 	if n := len(id); n < 1 || n > 20 {
 		return fmt.Errorf("series id length must be 1-20: %q", id)
 	}
 	if !seriesCharset.MatchString(id) {
-		return fmt.Errorf("series id is invalid (allowed: alphanumerics separated by single . _ - /): %q", id)
-	}
-	if len(id) >= 2 && strings.EqualFold(id[:2], "AT") {
-		return fmt.Errorf("series id cannot start with AT: %q", id)
+		return fmt.Errorf("series id is invalid (allowed: alphanumerics separated by single . _ -): %q", id)
 	}
 	return nil
 }

@@ -347,11 +347,16 @@ func gdDraft(t *testing.T, global Discount) *DraftSalesInvoice {
 	d := &DraftSalesInvoice{}
 	d.DocumentType = FT
 	d.Customer = Customer{
-		CustomerID:     uuid.New(),
-		AccountID:      "ACC-GD",
-		CustomerTaxID:  "500000001",
-		CompanyName:    "Cliente GD Lda.",
-		BillingAddress: Address{Country: "PT"},
+		CustomerID:    uuid.New(),
+		AccountID:     "ACC-GD",
+		CustomerTaxID: "500000000",
+		CompanyName:   "Cliente GD Lda.",
+		BillingAddress: Address{
+			AddressDetail: "Rua de Teste 1",
+			City:          "Lisboa",
+			PostalCode:    "1000-001",
+			Country:       "PT",
+		},
 	}
 	d.Date = time.Date(2026, 6, 5, 0, 0, 0, 0, time.UTC)
 	d.Series = mustVal(NewSeries("GD2026", FT))

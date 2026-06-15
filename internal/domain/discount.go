@@ -7,6 +7,7 @@ import (
 
 type Discount interface {
 	Apply(base Money) Money
+	Validate() error
 	isDiscount()
 }
 
@@ -16,6 +17,13 @@ type PercentDiscount struct {
 }
 
 func (PercentDiscount) isDiscount() {}
+
+func (p PercentDiscount) Validate() error {
+	if p.Rate < 0 || p.Rate > PercentScale {
+		return fmt.Errorf("discount percent out of range [0%%,100%%]: %d basis points", p.Rate)
+	}
+	return nil
+}
 
 func (p PercentDiscount) Apply(base Money) Money {
 	return base.Sub(base.MulPercent(p.Rate))
@@ -27,6 +35,13 @@ type AmountDiscount struct {
 }
 
 func (AmountDiscount) isDiscount() {}
+
+func (a AmountDiscount) Validate() error {
+	if a.Amount < 0 {
+		return fmt.Errorf("negative discount amount: %s", a.Amount.Format2DP())
+	}
+	return nil
+}
 
 func (a AmountDiscount) Apply(base Money) Money {
 	if a.Amount > base {
@@ -79,6 +94,19 @@ func (a AmountDiscount) MarshalJSON() ([]byte, error) {
 	}{discountKindAmount, a.Amount})
 }
 
+// decodeValidated decodes data into the concrete discount type and runs its
+// Validate, so every decoded discount passes the same gate.
+func decodeValidated[T Discount](data []byte) (Discount, error) {
+	var v T
+	if err := json.Unmarshal(data, &v); err != nil {
+		return nil, err
+	}
+	if err := v.Validate(); err != nil {
+		return nil, err
+	}
+	return v, nil
+}
+
 func unmarshalDiscount(data []byte) (Discount, error) {
 	if len(data) == 0 || string(data) == "null" {
 		return nil, nil
@@ -93,17 +121,9 @@ func unmarshalDiscount(data []byte) (Discount, error) {
 	case "":
 		return nil, nil
 	case discountKindPercent:
-		var p PercentDiscount
-		if err := json.Unmarshal(data, &p); err != nil {
-			return nil, err
-		}
-		return p, nil
+		return decodeValidated[PercentDiscount](data)
 	case discountKindAmount:
-		var a AmountDiscount
-		if err := json.Unmarshal(data, &a); err != nil {
-			return nil, err
-		}
-		return NewAmountDiscount(a.Amount)
+		return decodeValidated[AmountDiscount](data)
 	default:
 		return nil, fmt.Errorf("invalid discount type: %q", head.Type)
 	}

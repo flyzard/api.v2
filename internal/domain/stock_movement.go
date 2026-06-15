@@ -105,6 +105,6 @@ func IssueStockMovement(draft *DraftStockMovement, series *Series, signer Signer
 	issued.QRPayload = buildQRPayload(&issued, qr)
 	return StockMovement{
 		IssuedDocument:      issued,
-		StockMovementFields: draft.StockMovementFields,
+		StockMovementFields: draft.StockMovementFields.clone(),
 	}, nil
 }

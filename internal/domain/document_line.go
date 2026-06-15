@@ -110,8 +110,13 @@ func (l DocumentLine) Validate() error {
 	if l.GlobalDiscountShare%centScale != 0 {
 		return fmt.Errorf("global discount share %s is not a whole cent", l.GlobalDiscountShare)
 	}
-	if max := applyDiscount(l.Discount, l.LineSubtotal()); l.GlobalDiscountShare > max {
-		return fmt.Errorf("global discount share %s exceeds line net %s", l.GlobalDiscountShare, max)
+	if l.Discount != nil {
+		if err := l.Discount.Validate(); err != nil {
+			return fmt.Errorf("discount: %w", err)
+		}
+	}
+	if maxShare := applyDiscount(l.Discount, l.LineSubtotal()); l.GlobalDiscountShare > maxShare {
+		return fmt.Errorf("global discount share %s exceeds line net %s", l.GlobalDiscountShare, maxShare)
 	}
 	if l.Quantity <= 0 {
 		return fmt.Errorf("non-positive quantity: %d", l.Quantity)

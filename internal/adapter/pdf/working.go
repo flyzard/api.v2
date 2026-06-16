@@ -13,8 +13,8 @@ func buildWorkDocument(wd domain.WorkDocument, m Meta, footerATCUD bool) (core.M
 	if wd.QRPayload == "" {
 		return nil, ErrMissingQRPayload
 	}
-	id := docIdentity{Type: wd.DocumentType, Number: wd.Number, Date: wd.Date, DueDate: wd.PaymentTerms}
-	eng, err := newDocEngine(m, id, wd.Customer, wd.ATCUD, wd.Hash, footerATCUD)
+	id := docIdentity{Type: wd.DocumentType, Number: wd.Number, Date: wd.Date, DueDate: wd.PaymentTerms, SystemEntry: &wd.SystemEntryDate}
+	eng, err := newDocEngine(m, id, wd.Customer, wd.ATCUD, wd.Hash, footerATCUD, wd.Status == domain.StatusCancelled)
 	if err != nil {
 		return nil, err
 	}

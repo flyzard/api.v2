@@ -159,7 +159,11 @@ func buildSpecialRegimes(r domain.SpecialRegimes) xmlSpecialRegimes {
 
 func buildSalesTotals(d domain.SalesInvoice) xmlDocumentTotals {
 	out := xmlDocumentTotals{
-		TaxPayable: saftMoney(d.Totals.TaxTotal + d.Totals.StampDuty),
+		// Derive TaxPayable = Gross − Net at 2dp so round(Net)+round(Tax)==round(Gross).
+		// Independent 2dp rounding of sub-cent accumulators otherwise drifts a cent.
+		// TaxPayable is NOT signed, so this never touches the hash chain; for
+		// consistent documents Gross−Net == TaxTotal+StampDuty exactly (golden unchanged).
+		TaxPayable: saftMoney(domain.MoneyFromCents(d.Totals.GrossTotal.Cents() - d.Totals.NetTotal.Cents())),
 		NetTotal:   saftMoney(d.Totals.NetTotal),
 		GrossTotal: saftMoney(d.Totals.GrossTotal),
 	}
@@ -175,7 +179,7 @@ func buildSalesTotals(d domain.SalesInvoice) xmlDocumentTotals {
 		out.Settlement = []xmlSettlement{settle}
 	}
 	if d.Currency != nil {
-		out.Currency = buildCurrency(*d.Currency)
+		out.Currency = buildCurrency(*d.Currency, d.Totals.GrossTotal)
 	}
 	for _, p := range d.Payments {
 		out.Payment = append(out.Payment, xmlFRPayment{
@@ -187,13 +191,13 @@ func buildSalesTotals(d domain.SalesInvoice) xmlDocumentTotals {
 	return out
 }
 
-func buildCurrency(c domain.Currency) *xmlCurrency {
+// buildCurrency emits the document gross expressed in the original currency.
+// GrossTotal (not the Currency.Amount field) is the single source of truth, so
+// a mis-set Amount cannot produce an inconsistent CurrencyAmount.
+func buildCurrency(c domain.Currency, gross domain.Money) *xmlCurrency {
 	return &xmlCurrency{
-		CurrencyCode: string(c.Code),
-		// NativeAmount reconstructs Amount × ExchangeRate on the scaled ints
-		// with half-away-from-zero rounding — the package convention. The old
-		// float round-trip drifted on half-cents (%.2f rounds half-to-even).
-		CurrencyAmount: saftMoney(c.NativeAmount()),
+		CurrencyCode:   string(c.Code),
+		CurrencyAmount: saftMoney(c.Convert(gross)),
 		ExchangeRate:   fmt.Sprintf("%.6f", c.ExchangeRate.Float64()),
 	}
 }

@@ -133,6 +133,36 @@ func TestSalesTotals_ZeroWithholdingSkipped(t *testing.T) {
 	}
 }
 
+func TestDisplayBreakdown_OrdersExemptToNormal(t *testing.T) {
+	in := domain.TaxBreakdown{
+		{Region: domain.PT, Category: domain.TaxNormal},
+		{Region: domain.PT, Category: domain.TaxExempt, ExemptionCode: domain.M07},
+		{Region: domain.PT, Category: domain.TaxReduced},
+		{Region: domain.PT, Category: domain.TaxIntermediate},
+	}
+	got := displayBreakdown(in)
+	want := []domain.TaxCategory{domain.TaxExempt, domain.TaxReduced, domain.TaxIntermediate, domain.TaxNormal}
+	for i, e := range got {
+		if e.Category != want[i] {
+			t.Fatalf("position %d: got %s, want %s (order: %v)", i, e.Category, want[i], got)
+		}
+	}
+	// input slice must NOT be mutated (we sort a clone, the domain order feeds the frozen QR)
+	if in[0].Category != domain.TaxNormal {
+		t.Errorf("displayBreakdown mutated its input; must clone")
+	}
+}
+
+func TestLineTaxLabel_ExemptShowsCode(t *testing.T) {
+	tx, err := domain.NewVATLineTax(domain.PT, domain.TaxExempt, domain.M07, "Isento artigo 9.º do CIVA")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := lineTaxLabel(tx); got != "Isento (M07)" {
+		t.Errorf("lineTaxLabel exempt = %q, want \"Isento (M07)\"", got)
+	}
+}
+
 func TestMetaValidate_LogoPNG(t *testing.T) {
 	m := validMeta()
 	m.LogoPNG = []byte("not a png")

@@ -28,6 +28,8 @@ var (
 	ErrSubCentPrecision           = errors.New("money value has sub-cent precision")
 	ErrCancellationDeadlinePassed = errors.New("cancellation deadline has passed; use recovery flow")
 	ErrNotRecoverySeries          = errors.New("recovery documents require a dedicated recovery series")
+	ErrIntegratedNotSupported     = errors.New("SourceBilling \"I\" (integrated document) is not supported: integration must not recompute or re-sign the originating system's document")
+	ErrHasLiveRectifyingNote      = errors.New("cannot annul a document that has a live rectifying note; annul the note first")
 	ErrRecoverySeriesMisuse       = errors.New("recovery series cannot issue normal documents")
 	ErrSeriesNotActive            = errors.New("series is not active")
 	ErrSeriesHasDocuments         = errors.New("series with issued documents cannot be cancelled; finalize it instead")

@@ -12,8 +12,7 @@ import (
 func TestExportSAFT_ContainsInPeriodInvoice(t *testing.T) {
 	svc, _ := newCommFixture()
 	draft := ftDraft(activeFTSeries(testNow()), testNow())
-	if _, err := svc.Invoicing.IssueSalesInvoice(context.Background(), testTenantID, draft, "FT2026", "src-1",
-		app.IdempotencyKey{Key: "k1", Fingerprint: "fp1"}); err != nil {
+	if _, err := svc.Invoicing.IssueSalesInvoice(context.Background(), testTenantID, app.IssueSalesInvoiceRequest{Draft: draft, SeriesID: "FT2026", SourceID: "src-1", Idem: app.IdempotencyKey{Key: "k1", Fingerprint: "fp1"}}); err != nil {
 		t.Fatalf("issue: %v", err)
 	}
 

@@ -197,3 +197,27 @@ func TestCommunicateInvoiceATError(t *testing.T) {
 		t.Fatalf("err = %v, want at.Error -3", err)
 	}
 }
+
+func TestBuildInvoiceEnvelope_CashVATIndicator(t *testing.T) {
+	// CashVAT true → indicator 1
+	inv := testInvoice(t)
+	inv.SpecialRegimes.CashVAT = true
+	env, err := buildInvoiceEnvelope(testCreds(), testCompany(t), inv)
+	if err != nil {
+		t.Fatalf("build: %v", err)
+	}
+	if !strings.Contains(string(env), "<doc:CashVATSchemeIndicator>1</doc:CashVATSchemeIndicator>") {
+		t.Errorf("CashVAT=true: want CashVATSchemeIndicator 1 in envelope:\n%s", string(env))
+	}
+
+	// CashVAT false → indicator 0
+	inv2 := testInvoice(t)
+	inv2.SpecialRegimes.CashVAT = false
+	env2, err := buildInvoiceEnvelope(testCreds(), testCompany(t), inv2)
+	if err != nil {
+		t.Fatalf("build: %v", err)
+	}
+	if !strings.Contains(string(env2), "<doc:CashVATSchemeIndicator>0</doc:CashVATSchemeIndicator>") {
+		t.Errorf("CashVAT=false: want CashVATSchemeIndicator 0 in envelope:\n%s", string(env2))
+	}
+}

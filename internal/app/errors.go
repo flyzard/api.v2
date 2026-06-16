@@ -34,6 +34,23 @@ func KindOf(err error) Kind {
 	return KindInternal
 }
 
+// Status maps a Kind to the HTTP status a transport should return. It is the
+// companion to KindOf: a handler does Status(KindOf(err)).
+func Status(k Kind) int {
+	switch k {
+	case KindInvalid:
+		return 422
+	case KindNotFound:
+		return 404
+	case KindConflict:
+		return 409
+	case KindAT:
+		return 502
+	default: // KindInternal and any unknown Kind
+		return 500
+	}
+}
+
 // Sentinel and repository errors. Repositories return ErrNotFound / ErrVersionConflict;
 // the service translates and wraps them.
 var (

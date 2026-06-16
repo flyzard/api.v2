@@ -15,8 +15,9 @@ func TestIssueWorkDocument_HappyPath(t *testing.T) {
 	draft := workDraft(activeSeries("NE2026", domain.NE, now), now)
 
 	doc, err := svc.Invoicing.IssueWorkDocument(
-		context.Background(), testTenantID, draft, "NE2026", "src-1",
-		app.IdempotencyKey{Key: "k1", Fingerprint: "fp1"},
+		context.Background(), testTenantID, app.IssueWorkDocumentRequest{
+			Draft: draft, SeriesID: "NE2026", SourceID: "src-1", Idem: app.IdempotencyKey{Key: "k1", Fingerprint: "fp1"},
+		},
 	)
 	if err != nil {
 		t.Fatalf("issue: %v", err)
@@ -45,8 +46,9 @@ func TestIssueStockMovement_HappyPath(t *testing.T) {
 	draft := stockDraft(activeSeries("GR2026", domain.GR, now), now)
 
 	doc, err := svc.Invoicing.IssueStockMovement(
-		context.Background(), testTenantID, draft, "GR2026", "src-1",
-		app.IdempotencyKey{Key: "k1", Fingerprint: "fp1"},
+		context.Background(), testTenantID, app.IssueStockMovementRequest{
+			Draft: draft, SeriesID: "GR2026", SourceID: "src-1", Idem: app.IdempotencyKey{Key: "k1", Fingerprint: "fp1"},
+		},
 	)
 	if err != nil {
 		t.Fatalf("issue: %v", err)
@@ -69,8 +71,9 @@ func TestIssuePayment_HappyPath(t *testing.T) {
 	draft, totals := paymentDraftRG(now)
 
 	doc, err := svc.Invoicing.IssuePayment(
-		context.Background(), testTenantID, draft, "RG2026",
-		app.IdempotencyKey{Key: "k1", Fingerprint: "fp1"}, totals,
+		context.Background(), testTenantID, app.IssuePaymentRequest{
+			Draft: draft, SeriesID: "RG2026", Idem: app.IdempotencyKey{Key: "k1", Fingerprint: "fp1"}, Totals: totals,
+		},
 	)
 	if err != nil {
 		t.Fatalf("issue: %v", err)
@@ -99,11 +102,11 @@ func TestIssuePayment_IdempotentReplay(t *testing.T) {
 	draft, totals := paymentDraftRG(now)
 	idem := app.IdempotencyKey{Key: "k1", Fingerprint: "fp1"}
 
-	first, err := svc.Invoicing.IssuePayment(context.Background(), testTenantID, draft, "RG2026", idem, totals)
+	first, err := svc.Invoicing.IssuePayment(context.Background(), testTenantID, app.IssuePaymentRequest{Draft: draft, SeriesID: "RG2026", Idem: idem, Totals: totals})
 	if err != nil {
 		t.Fatalf("first: %v", err)
 	}
-	second, err := svc.Invoicing.IssuePayment(context.Background(), testTenantID, draft, "RG2026", idem, totals)
+	second, err := svc.Invoicing.IssuePayment(context.Background(), testTenantID, app.IssuePaymentRequest{Draft: draft, SeriesID: "RG2026", Idem: idem, Totals: totals})
 	if err != nil {
 		t.Fatalf("replay: %v", err)
 	}
@@ -127,16 +130,18 @@ func TestIssueDebitNote_SuppliesReader(t *testing.T) {
 	)
 
 	ft, err := svc.Invoicing.IssueSalesInvoice(
-		context.Background(), testTenantID, ftDraft(activeSeries("FT2026", domain.FT, now), now),
-		"FT2026", "src-ft", app.IdempotencyKey{Key: "kft", Fingerprint: "fp"},
+		context.Background(), testTenantID, app.IssueSalesInvoiceRequest{
+			Draft: ftDraft(activeSeries("FT2026", domain.FT, now), now), SeriesID: "FT2026", SourceID: "src-ft", Idem: app.IdempotencyKey{Key: "kft", Fingerprint: "fp"},
+		},
 	)
 	if err != nil {
 		t.Fatalf("issue FT: %v", err)
 	}
 
 	nd, err := svc.Invoicing.IssueSalesInvoice(
-		context.Background(), testTenantID, ndDraft(activeSeries("ND2026", domain.ND, now), now, ft),
-		"ND2026", "src-nd", app.IdempotencyKey{Key: "knd", Fingerprint: "fp"},
+		context.Background(), testTenantID, app.IssueSalesInvoiceRequest{
+			Draft: ndDraft(activeSeries("ND2026", domain.ND, now), now, ft), SeriesID: "ND2026", SourceID: "src-nd", Idem: app.IdempotencyKey{Key: "knd", Fingerprint: "fp"},
+		},
 	)
 	if err != nil {
 		t.Fatalf("issue ND (reader must be supplied by the service): %v", err)
@@ -161,17 +166,17 @@ func TestExportSAFT_AllFamilies(t *testing.T) {
 	)
 	ctx := context.Background()
 
-	if _, err := svc.Invoicing.IssueSalesInvoice(ctx, testTenantID, ftDraft(activeSeries("FT2026", domain.FT, now), now), "FT2026", "s", app.IdempotencyKey{Key: "1", Fingerprint: "1"}); err != nil {
+	if _, err := svc.Invoicing.IssueSalesInvoice(ctx, testTenantID, app.IssueSalesInvoiceRequest{Draft: ftDraft(activeSeries("FT2026", domain.FT, now), now), SeriesID: "FT2026", SourceID: "s", Idem: app.IdempotencyKey{Key: "1", Fingerprint: "1"}}); err != nil {
 		t.Fatalf("FT: %v", err)
 	}
-	if _, err := svc.Invoicing.IssueWorkDocument(ctx, testTenantID, workDraft(activeSeries("NE2026", domain.NE, now), now), "NE2026", "s", app.IdempotencyKey{Key: "2", Fingerprint: "2"}); err != nil {
+	if _, err := svc.Invoicing.IssueWorkDocument(ctx, testTenantID, app.IssueWorkDocumentRequest{Draft: workDraft(activeSeries("NE2026", domain.NE, now), now), SeriesID: "NE2026", SourceID: "s", Idem: app.IdempotencyKey{Key: "2", Fingerprint: "2"}}); err != nil {
 		t.Fatalf("NE: %v", err)
 	}
-	if _, err := svc.Invoicing.IssueStockMovement(ctx, testTenantID, stockDraft(activeSeries("GR2026", domain.GR, now), now), "GR2026", "s", app.IdempotencyKey{Key: "3", Fingerprint: "3"}); err != nil {
+	if _, err := svc.Invoicing.IssueStockMovement(ctx, testTenantID, app.IssueStockMovementRequest{Draft: stockDraft(activeSeries("GR2026", domain.GR, now), now), SeriesID: "GR2026", SourceID: "s", Idem: app.IdempotencyKey{Key: "3", Fingerprint: "3"}}); err != nil {
 		t.Fatalf("GR: %v", err)
 	}
 	pd, pt := paymentDraftRG(now)
-	if _, err := svc.Invoicing.IssuePayment(ctx, testTenantID, pd, "RG2026", app.IdempotencyKey{Key: "4", Fingerprint: "4"}, pt); err != nil {
+	if _, err := svc.Invoicing.IssuePayment(ctx, testTenantID, app.IssuePaymentRequest{Draft: pd, SeriesID: "RG2026", Idem: app.IdempotencyKey{Key: "4", Fingerprint: "4"}, Totals: pt}); err != nil {
 		t.Fatalf("RG: %v", err)
 	}
 

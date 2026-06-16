@@ -153,6 +153,13 @@ func (m Money) String() string {
 	return fmt.Sprintf("€%.5f", m.Float64())
 }
 
+// Cents returns the amount rounded to whole cents (half away from zero) — the
+// integer 2dp value Format2DP renders.
+func (m Money) Cents() int64 { return roundDiv(int64(m), centScale) }
+
+// MoneyFromCents builds a Money from a whole-cent count.
+func MoneyFromCents(cents int64) Money { return Money(cents * centScale) }
+
 // Format2DP renders Money as euros at 2 decimal places ("123.45"),
 // rounding half-away-from-zero. Computed from the scaled int64 to avoid
 // float round-trip drift in AT signatures.

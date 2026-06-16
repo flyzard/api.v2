@@ -101,8 +101,7 @@ func (s *CommService) classify(task Task, err error) error {
 			return s.terminal(task, fmt.Errorf("AMBIGUOUS OUTCOME — verify document state at AT before re-sending: %w", err))
 		}
 		if atErr.IsRetryable() && task.Attempts < maxCommAttempts {
-			retryAt := s.clock.Now().Add(commBackoff(task.Attempts))
-			return s.queue.Fail(task.ID, err.Error(), &retryAt)
+			return s.scheduleRetry(task, err)
 		}
 	}
 	return s.terminal(task, err)
@@ -112,14 +111,19 @@ func (s *CommService) classify(task Task, err error) error {
 // retryable AT errors.
 func (s *CommService) transient(task Task, err error) error {
 	if task.Attempts < maxCommAttempts {
-		retryAt := s.clock.Now().Add(commBackoff(task.Attempts))
-		return s.queue.Fail(task.ID, err.Error(), &retryAt)
+		return s.scheduleRetry(task, err)
 	}
 	return s.queue.Fail(task.ID, err.Error(), nil)
 }
 
 func (s *CommService) terminal(task Task, err error) error {
 	return s.queue.Fail(task.ID, err.Error(), nil)
+}
+
+// scheduleRetry reschedules a task with the standard per-attempt backoff.
+func (s *CommService) scheduleRetry(task Task, err error) error {
+	retryAt := s.clock.Now().Add(commBackoff(task.Attempts))
+	return s.queue.Fail(task.ID, err.Error(), &retryAt)
 }
 
 // commBackoff doubles from baseCommBackoff per claimed attempt (attempts >= 1),

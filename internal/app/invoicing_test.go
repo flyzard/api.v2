@@ -18,8 +18,9 @@ func TestIssueSalesInvoice_HappyPath(t *testing.T) {
 	draft := ftDraft(activeFTSeries(testNow()), testNow())
 
 	doc, err := svc.Invoicing.IssueSalesInvoice(
-		context.Background(), testTenantID, draft, "FT2026", "src-1",
-		app.IdempotencyKey{Key: "k1", Fingerprint: "fp1"},
+		context.Background(), testTenantID, app.IssueSalesInvoiceRequest{
+			Draft: draft, SeriesID: "FT2026", SourceID: "src-1", Idem: app.IdempotencyKey{Key: "k1", Fingerprint: "fp1"},
+		},
 	)
 	if err != nil {
 		t.Fatalf("issue: %v", err)
@@ -44,11 +45,11 @@ func TestIssueSalesInvoice_IdempotentReplay(t *testing.T) {
 	draft := ftDraft(activeFTSeries(testNow()), testNow())
 	idem := app.IdempotencyKey{Key: "k1", Fingerprint: "fp1"}
 
-	first, err := svc.Invoicing.IssueSalesInvoice(context.Background(), testTenantID, draft, "FT2026", "src-1", idem)
+	first, err := svc.Invoicing.IssueSalesInvoice(context.Background(), testTenantID, app.IssueSalesInvoiceRequest{Draft: draft, SeriesID: "FT2026", SourceID: "src-1", Idem: idem})
 	if err != nil {
 		t.Fatalf("first: %v", err)
 	}
-	second, err := svc.Invoicing.IssueSalesInvoice(context.Background(), testTenantID, draft, "FT2026", "src-1", idem)
+	second, err := svc.Invoicing.IssueSalesInvoice(context.Background(), testTenantID, app.IssueSalesInvoiceRequest{Draft: draft, SeriesID: "FT2026", SourceID: "src-1", Idem: idem})
 	if err != nil {
 		t.Fatalf("replay: %v", err)
 	}
@@ -64,13 +65,11 @@ func TestIssueSalesInvoice_IdempotencyMismatch(t *testing.T) {
 	svc, _ := newFixture()
 	draft := ftDraft(activeFTSeries(testNow()), testNow())
 
-	_, err := svc.Invoicing.IssueSalesInvoice(context.Background(), testTenantID, draft, "FT2026", "src-1",
-		app.IdempotencyKey{Key: "k1", Fingerprint: "fp1"})
+	_, err := svc.Invoicing.IssueSalesInvoice(context.Background(), testTenantID, app.IssueSalesInvoiceRequest{Draft: draft, SeriesID: "FT2026", SourceID: "src-1", Idem: app.IdempotencyKey{Key: "k1", Fingerprint: "fp1"}})
 	if err != nil {
 		t.Fatalf("first: %v", err)
 	}
-	_, err = svc.Invoicing.IssueSalesInvoice(context.Background(), testTenantID, draft, "FT2026", "src-1",
-		app.IdempotencyKey{Key: "k1", Fingerprint: "DIFFERENT"})
+	_, err = svc.Invoicing.IssueSalesInvoice(context.Background(), testTenantID, app.IssueSalesInvoiceRequest{Draft: draft, SeriesID: "FT2026", SourceID: "src-1", Idem: app.IdempotencyKey{Key: "k1", Fingerprint: "DIFFERENT"}})
 	if app.KindOf(err) != app.KindConflict {
 		t.Fatalf("kind = %v, want KindConflict", app.KindOf(err))
 	}
@@ -84,8 +83,7 @@ func TestIssueSalesInvoice_RetriesOnVersionConflict(t *testing.T) {
 	store.FailSeriesSaveOnce() // attempt 1's Series.Save returns ErrVersionConflict
 
 	draft := ftDraft(activeFTSeries(testNow()), testNow())
-	doc, err := svc.Invoicing.IssueSalesInvoice(context.Background(), testTenantID, draft, "FT2026", "src-1",
-		app.IdempotencyKey{Key: "k1", Fingerprint: "fp1"})
+	doc, err := svc.Invoicing.IssueSalesInvoice(context.Background(), testTenantID, app.IssueSalesInvoiceRequest{Draft: draft, SeriesID: "FT2026", SourceID: "src-1", Idem: app.IdempotencyKey{Key: "k1", Fingerprint: "fp1"}})
 	if err != nil {
 		t.Fatalf("should succeed on retry: %v", err)
 	}
@@ -127,8 +125,7 @@ func TestIssueSalesInvoice_TenantIsolation(t *testing.T) {
 	// Tenant-keying must keep series, documents, and idempotency records separate.
 	for _, tid := range []string{"tenant-a", "tenant-b"} {
 		draft := ftDraft(activeFTSeries(now), now)
-		if _, err := svc.Invoicing.IssueSalesInvoice(context.Background(), tid, draft, "FT2026", "src",
-			app.IdempotencyKey{Key: "k1", Fingerprint: "fp"}); err != nil {
+		if _, err := svc.Invoicing.IssueSalesInvoice(context.Background(), tid, app.IssueSalesInvoiceRequest{Draft: draft, SeriesID: "FT2026", SourceID: "src", Idem: app.IdempotencyKey{Key: "k1", Fingerprint: "fp"}}); err != nil {
 			t.Fatalf("%s: %v", tid, err)
 		}
 	}
@@ -148,8 +145,7 @@ func TestIssueSalesInvoice_InvalidDraft(t *testing.T) {
 	draft := ftDraft(activeFTSeries(testNow()), testNow())
 	draft.Lines = nil // domain validation rejects with ErrNoLines
 
-	_, err := svc.Invoicing.IssueSalesInvoice(context.Background(), testTenantID, draft, "FT2026", "src-1",
-		app.IdempotencyKey{Key: "k1", Fingerprint: "fp1"})
+	_, err := svc.Invoicing.IssueSalesInvoice(context.Background(), testTenantID, app.IssueSalesInvoiceRequest{Draft: draft, SeriesID: "FT2026", SourceID: "src-1", Idem: app.IdempotencyKey{Key: "k1", Fingerprint: "fp1"}})
 	if app.KindOf(err) != app.KindInvalid {
 		t.Fatalf("kind = %v, want KindInvalid", app.KindOf(err))
 	}
@@ -168,8 +164,7 @@ func TestIssueSalesInvoice_SeriesNotIssuable(t *testing.T) {
 	})
 	draft := ftDraft(mustVal(domain.NewSeries("FT2026", domain.FT)), testNow())
 
-	_, err := svc.Invoicing.IssueSalesInvoice(context.Background(), testTenantID, draft, "FT2026", "src-1",
-		app.IdempotencyKey{Key: "k1", Fingerprint: "fp1"})
+	_, err := svc.Invoicing.IssueSalesInvoice(context.Background(), testTenantID, app.IssueSalesInvoiceRequest{Draft: draft, SeriesID: "FT2026", SourceID: "src-1", Idem: app.IdempotencyKey{Key: "k1", Fingerprint: "fp1"}})
 	if app.KindOf(err) != app.KindConflict {
 		t.Fatalf("kind = %v, want KindConflict", app.KindOf(err))
 	}
@@ -192,8 +187,7 @@ func TestIssueSalesInvoice_MonthlySAFTNoEnqueue(t *testing.T) {
 	})
 	draft := ftDraft(activeFTSeries(testNow()), testNow())
 
-	_, err := svc.Invoicing.IssueSalesInvoice(context.Background(), testTenantID, draft, "FT2026", "src-1",
-		app.IdempotencyKey{Key: "k1", Fingerprint: "fp1"})
+	_, err := svc.Invoicing.IssueSalesInvoice(context.Background(), testTenantID, app.IssueSalesInvoiceRequest{Draft: draft, SeriesID: "FT2026", SourceID: "src-1", Idem: app.IdempotencyKey{Key: "k1", Fingerprint: "fp1"}})
 	if err != nil {
 		t.Fatalf("issue: %v", err)
 	}
@@ -217,7 +211,7 @@ func TestIssueSalesInvoice_ConcurrentSameSeries(t *testing.T) {
 			draft := ftDraft(activeFTSeries(testNow()), testNow())
 			key := app.IdempotencyKey{Key: fmt.Sprintf("k-%d", i), Fingerprint: "fp"}
 			doc, err := svc.Invoicing.IssueSalesInvoice(
-				context.Background(), testTenantID, draft, "FT2026", fmt.Sprintf("src-%d", i), key,
+				context.Background(), testTenantID, app.IssueSalesInvoiceRequest{Draft: draft, SeriesID: "FT2026", SourceID: fmt.Sprintf("src-%d", i), Idem: key},
 			)
 			errs[i] = err
 			if err == nil {

@@ -26,11 +26,12 @@ type AllocationPolicy struct {
 	// not in the system — e.g. an RG settling a pre-system invoice, or an NC
 	// referencing a manually issued document.
 	AllowUnknownSource bool
-	// SkipCeiling disables the Consumed+claim <= Gross check. Needed for
+	// SkipSourceCeiling disables the Consumed+claim <= Gross check. Needed for
 	// rappel/volume-discount NCs that span many invoices, where per-source
-	// allocation is not meaningful. The ceiling itself is stricter-safe, not
-	// statutory ([CONFIRMAR] — no CIVA article caps NC amounts).
-	SkipCeiling bool
+	// allocation is not meaningful (SOFT relaxation, NC-only). The ceiling
+	// itself is stricter-safe, not statutory ([CONFIRMAR] — no CIVA article
+	// caps NC amounts).
+	SkipSourceCeiling bool
 }
 
 // ValidateAllocations checks that the consuming document's claims — keyed by
@@ -56,7 +57,7 @@ func ValidateAllocations(customerID uuid.UUID, claims map[string]Money, sources 
 		if src.CustomerID != customerID {
 			return fmt.Errorf("%w: %q", ErrSourceCustomerMismatch, doc)
 		}
-		if !policy.SkipCeiling && src.Consumed+claim > src.Gross {
+		if !policy.SkipSourceCeiling && src.Consumed+claim > src.Gross {
 			return fmt.Errorf("%w: %q consumed %s + claim %s > gross %s",
 				ErrAllocationExceedsSource, doc,
 				src.Consumed.Format2DP(), claim.Format2DP(), src.Gross.Format2DP())

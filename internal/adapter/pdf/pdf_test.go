@@ -61,10 +61,11 @@ func TestMetaValidate(t *testing.T) {
 
 func TestCopyKindLabel(t *testing.T) {
 	cases := map[CopyKind]string{
-		Original:   "Original",
-		Duplicado:  "Duplicado",
-		Triplicado: "Triplicado",
-		SegundaVia: "2.ª via",
+		Original:      "Original",
+		Duplicado:     "Duplicado",
+		Triplicado:    "Triplicado",
+		Quadruplicado: "Quadruplicado",
+		SegundaVia:    "2.ª via",
 	}
 	for k, want := range cases {
 		if got := k.label(); got != want {
@@ -74,8 +75,8 @@ func TestCopyKindLabel(t *testing.T) {
 }
 
 func TestRequiredVias(t *testing.T) {
-	if got := RequiredVias(domain.GT); !slices.Equal(got, []CopyKind{Original, Duplicado, Triplicado}) {
-		t.Errorf("transport vias = %v, want Original+Duplicado+Triplicado", got)
+	if got := RequiredVias(domain.GT); !slices.Equal(got, []CopyKind{Original, Duplicado, Triplicado, Quadruplicado}) {
+		t.Errorf("transport vias = %v, want Original+Duplicado+Triplicado+Quadruplicado", got)
 	}
 	for _, dt := range []domain.DocumentType{domain.FT, domain.FS, domain.NE, domain.RC} {
 		if got := RequiredVias(dt); !slices.Equal(got, []CopyKind{Original, Duplicado}) {

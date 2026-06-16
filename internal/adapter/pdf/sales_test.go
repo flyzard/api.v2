@@ -1,10 +1,14 @@
 package pdf
 
 import (
+	"encoding/json"
 	"errors"
 	"os"
 	"strings"
 	"testing"
+
+	"github.com/johnfercher/go-tree/node"
+	"github.com/johnfercher/maroto/v2/pkg/core"
 
 	"github.com/flyzard/invoicing.v2/internal/domain"
 	"github.com/johnfercher/maroto/v2/pkg/test"
@@ -102,6 +106,7 @@ func TestBuildSalesInvoice_Variants(t *testing.T) {
 		{"ft_withholding", fixtureFTWithholding(t), "ft_withholding.json"},
 		{"fr_payments", fixtureFR(t), "fr_payments.json"},
 		{"fs_anonymous", fixtureFSAnonymous(t), "fs_anonymous.json"},
+		{"vat_exempt", fixtureFTExempt(t), "vat_exempt.json"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -125,5 +130,52 @@ func TestWriteSampleForEyeball(t *testing.T) {
 	}
 	if err := os.WriteFile("../../../out/sample-ft.pdf", b, 0o644); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// serializeStructure marshals eng.GetStructure() to a JSON string for
+// string-based assertions in tests that do not use a golden file.
+func serializeStructure(t *testing.T, eng core.Maroto) string {
+	t.Helper()
+	type N struct {
+		Value   any            `json:"value,omitempty"`
+		Type    string         `json:"type"`
+		Details map[string]any `json:"details,omitempty"`
+		Nodes   []*N           `json:"nodes,omitempty"`
+	}
+	var walk func(*node.Node[core.Structure]) *N
+	walk = func(n *node.Node[core.Structure]) *N {
+		d := n.GetData()
+		result := &N{Type: d.Type, Value: d.Value, Details: d.Details}
+		for _, next := range n.GetNexts() {
+			result.Nodes = append(result.Nodes, walk(next))
+		}
+		return result
+	}
+	b, err := json.Marshal(walk(eng.GetStructure()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(b)
+}
+
+func TestCancelledReprint_ForcesOriginal(t *testing.T) {
+	m := validMeta()
+	m.Copy = SegundaVia
+	eng, err := buildSalesInvoice(fixtureFTCancelled(t), m, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := serializeStructure(t, eng) // use the same serialization the golden tests use
+	if !strings.Contains(s, "Original") || strings.Contains(s, "2.ª via") {
+		t.Errorf("cancelled doc with Copy=SegundaVia must print Original, not 2.ª via")
+	}
+	// negative: a NON-cancelled SegundaVia still prints 2.ª via
+	eng2, err := buildSalesInvoice(fixtureFT(t), m, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s2 := serializeStructure(t, eng2); !strings.Contains(s2, "2.ª via") {
+		t.Errorf("non-cancelled Copy=SegundaVia must still print 2.ª via")
 	}
 }

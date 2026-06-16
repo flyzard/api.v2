@@ -309,6 +309,100 @@ func (r docRepo) GetPayment(n domain.DocNumber) (domain.Payment, error) {
 	return v, nil
 }
 
+func (r docRepo) LiveRectifyingNotes(number domain.DocNumber) ([]domain.SalesInvoice, error) {
+	prefix := r.tenantID + sep
+	target := number.Format()
+	var out []domain.SalesInvoice
+	for k, v := range r.store.sales {
+		if !strings.HasPrefix(k, prefix) {
+			continue
+		}
+		if v.DocumentType != domain.NC && v.DocumentType != domain.ND {
+			continue
+		}
+		if v.Status == domain.StatusCancelled {
+			continue
+		}
+		if rectifies(v, target) {
+			out = append(out, v)
+		}
+	}
+	slices.SortFunc(out, func(a, b domain.SalesInvoice) int { return a.Number.Seq - b.Number.Seq })
+	return out, nil
+}
+
+func rectifies(nc domain.SalesInvoice, target string) bool {
+	for _, line := range nc.Lines {
+		for _, ref := range line.References {
+			if ref.Reference == target {
+				return true
+			}
+			if pn, err := domain.ParseDocNumber(ref.Reference); err == nil && pn.Format() == target {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func (r docRepo) SourceState(n domain.DocNumber, axis app.AllocAxis) (domain.SourceDocState, error) {
+	src, ok := r.store.sales[docKey(r.tenantID, n)]
+	if !ok {
+		return domain.SourceDocState{}, app.ErrNotFound
+	}
+	return domain.SourceDocState{
+		CustomerID: src.Customer.CustomerID,
+		Status:     src.Status,
+		Gross:      src.Totals.GrossTotal,
+		Consumed:   r.consumedAgainst(n, axis),
+	}, nil
+}
+
+// consumedAgainst sums non-cancelled allocations on the given axis:
+//   - AllocSettlement: RC/RG receipt settlements (PaymentLine.SourceDocuments) only.
+//   - AllocCredit: NC line grosses (References) only — ND is excluded.
+func (r docRepo) consumedAgainst(n domain.DocNumber, axis app.AllocAxis) domain.Money {
+	key := n.Format()
+	prefix := r.tenantID + sep
+	var sum domain.Money
+	switch axis {
+	case app.AllocCredit:
+		for k, inv := range r.store.sales {
+			if !strings.HasPrefix(k, prefix) || inv.Status == domain.StatusCancelled {
+				continue
+			}
+			if inv.DocumentType != domain.NC { // ND excluded from credit axis
+				continue
+			}
+			for _, ln := range inv.Lines {
+				for _, ref := range ln.References {
+					if ref.Reference == key {
+						sum += ln.LineTotal()
+					}
+				}
+			}
+		}
+	case app.AllocSettlement:
+		for k, p := range r.store.payments {
+			if !strings.HasPrefix(k, prefix) || p.Status == domain.StatusCancelled {
+				continue
+			}
+			for _, ln := range p.Lines {
+				amt := ln.Movement.Amount()
+				if ln.SettlementAmount != nil {
+					amt = *ln.SettlementAmount
+				}
+				for _, sd := range ln.SourceDocuments {
+					if sd.OriginatingON == key {
+						sum += amt
+					}
+				}
+			}
+		}
+	}
+	return sum
+}
+
 func (r docRepo) PaymentsInPeriod(from, to time.Time) ([]domain.Payment, error) {
 	prefix := r.tenantID + sep
 	var out []domain.Payment

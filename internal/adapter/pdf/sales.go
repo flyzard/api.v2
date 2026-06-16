@@ -14,7 +14,7 @@ func buildSalesInvoice(inv domain.SalesInvoice, m Meta, footerATCUD bool) (core.
 		return nil, ErrMissingQRPayload
 	}
 	id := docIdentity{Type: inv.DocumentType, Number: inv.Number, Date: inv.Date, DueDate: inv.PaymentTerms}
-	eng, err := newDocEngine(m, id, inv.Customer, inv.ATCUD, inv.Hash, footerATCUD)
+	eng, err := newDocEngine(m, id, inv.Customer, inv.ATCUD, inv.Hash, footerATCUD, inv.Status == domain.StatusCancelled)
 	if err != nil {
 		return nil, err
 	}

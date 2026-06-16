@@ -19,12 +19,17 @@ func buildStockMovement(sm domain.StockMovement, m Meta, footerATCUD bool) (core
 		return nil, ErrMissingQRPayload
 	}
 	id := docIdentity{Type: sm.DocumentType, Number: sm.Number, Date: sm.Date}
-	eng, err := newDocEngine(m, id, sm.Customer, sm.ATCUD, sm.Hash, footerATCUD)
+	eng, err := newDocEngine(m, id, sm.Customer, sm.ATCUD, sm.Hash, footerATCUD, sm.Status == domain.StatusCancelled)
 	if err != nil {
 		return nil, err
 	}
 	if sm.Status == domain.StatusCancelled {
 		eng.AddRows(cancelledRows(sm.Reason)...)
+	}
+	if sm.Status == domain.StatusThirdParty {
+		// After the cancelled branch: a cancelled third-party guia has Status 'A'
+		// (Cancel overwrites 'T'), so it shows ANULADO, not this mention — intended.
+		eng.AddRows(thirdPartyRows()...)
 	}
 	if sm.ATDocCodeID != "" {
 		eng.AddRows(row.New(5).Add(text.NewCol(12, "Código AT: "+sm.ATDocCodeID,

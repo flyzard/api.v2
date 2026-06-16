@@ -260,6 +260,9 @@ func issueCommon(draft *CommonDraftDocument, calc totalsCalculator, series *Seri
 	if err != nil {
 		return IssuedDocument{}, err
 	}
+	if sourceBilling == SourceBillingIntegrated {
+		return IssuedDocument{}, ErrIntegratedNotSupported
+	}
 	recovering := sourceBilling == SourceBillingManual
 	if recovering && opts.Recovered == nil {
 		return IssuedDocument{}, fmt.Errorf("SourceBilling %q requires IssueOptions.Recovered (original document reference)", SourceBillingManual)
@@ -342,6 +345,16 @@ func issueCommon(draft *CommonDraftDocument, calc totalsCalculator, series *Seri
 	series.AppendIssue(number.Seq, hashStr, date, sysEntry)
 
 	return issued, nil
+}
+
+// ValidateNoLiveRectifier enforces Despacho 8632/2014 §3.3.8: a document with a
+// live (non-cancelled) rectifying note cannot be cancelled. The caller fetches
+// the referencing NC/ND numbers from persistence; the domain only decides.
+func ValidateNoLiveRectifier(rectifiers []DocNumber) error {
+	if len(rectifiers) == 0 {
+		return nil
+	}
+	return fmt.Errorf("%w: %s", ErrHasLiveRectifyingNote, rectifiers[0].Format())
 }
 
 // Cancel marks the document as cancelled (Status = "A") if the e-Fatura

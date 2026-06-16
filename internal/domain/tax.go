@@ -123,6 +123,9 @@ func GetTaxRate(region TaxRegion, category TaxCategory, exemption Exemption) (Ta
 		return TaxRate{}, fmt.Errorf("category %s has no canonical rate; construct TaxRate directly with caller-supplied Value", TaxOther)
 	}
 	if category == TaxExempt {
+		// Policy (Despacho 8632/2014 §3.2.6): the issuer must state the exemption
+		// reason — never silently default to M99. M99 is accepted only when the
+		// caller passes it explicitly as the catch-all.
 		if !exemption.Valid() {
 			return TaxRate{}, fmt.Errorf("category %s requires a valid exemption, got %q", TaxExempt, exemption)
 		}
@@ -159,6 +162,7 @@ const (
 	M20 Exemption = "M20" // M20 is an exemption for flat-rate farmers regime per Art. 59.o-D n.o 2 CIVA.
 	M21 Exemption = "M21" // M21 is an exemption for resellers/distributors regime per Art. 72.o n.o 4 CIVA.
 	M25 Exemption = "M25" // M25 is an exemption for goods on consignment per Art. 38.o n.o 1 a) CIVA.
+	M26 Exemption = "M26" // M26 is a zero-rate (with deduction) exemption for the basic food basket per Lei n.º 17/2023.
 	M30 Exemption = "M30" // M30 is a reverse charge code for waste/scrap/recyclables per Art. 2.o n.o 1 i) CIVA.
 	M31 Exemption = "M31" // M31 is a reverse charge code for construction services per Art. 2.o n.o 1 j) CIVA.
 	M32 Exemption = "M32" // M32 is a reverse charge code for greenhouse gas emissions per Art. 2.o n.o 1 l) CIVA.
@@ -201,6 +205,7 @@ var exemptions = map[Exemption]exemptionInfo{
 	M20: {Description: "IVA - regime forfetário / Artigo 59.º-D n.º 2 do CIVA"},
 	M21: {Description: "IVA - não confere direito a dedução / Artigo 72.º n.º 4 do CIVA"},
 	M25: {Description: "Mercadorias à consignação / Artigo 38.º n.º 1 alínea a) do CIVA"},
+	M26: {Description: "Isenção de IVA com direito à dedução no cabaz alimentar / Lei n.º 17/2023, de 14 de abril"},
 
 	// Reverse charge (autoliquidação)
 	M30: {Description: "IVA - autoliquidação / Artigo 2.º n.º 1 alínea i) do CIVA", IsReverseCharge: true},

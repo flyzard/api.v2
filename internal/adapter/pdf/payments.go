@@ -16,7 +16,7 @@ import (
 // no QR block, so the footer is the ATCUD's only home and always prints it.
 func buildPayment(p domain.Payment, m Meta) (core.Maroto, error) {
 	id := docIdentity{Type: p.Type, Number: p.Number, Date: p.TransactionDate}
-	eng, err := newDocEngine(m, id, p.Customer, p.ATCUD, "", true)
+	eng, err := newDocEngine(m, id, p.Customer, p.ATCUD, "", true, p.Status == domain.StatusCancelled)
 	if err != nil {
 		return nil, err
 	}

@@ -334,6 +334,9 @@ func IssuePayment(draft *PaymentDraft, series *Series, now time.Time, totals Pay
 	if err != nil {
 		return Payment{}, err
 	}
+	if sourcePayment == SourceBillingIntegrated {
+		return Payment{}, ErrIntegratedNotSupported
+	}
 	// Receipts carry no Hash/HashControl in SAF-T — there is nowhere to record
 	// an original-document reference. Recovery for payments is SourcePayment="M"
 	// plus the recovery-series policy only.

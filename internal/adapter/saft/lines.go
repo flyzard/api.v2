@@ -16,6 +16,7 @@ type xmlLine struct {
 	Quantity           saftQty        `xml:"Quantity"`
 	UnitOfMeasure      string         `xml:"UnitOfMeasure"`
 	UnitPrice          saftMoneyLine  `xml:"UnitPrice"`
+	TaxBase            *saftMoney     `xml:"TaxBase,omitempty"`
 	TaxPointDate       string         `xml:"TaxPointDate"`
 	References         []xmlDocRef    `xml:"References,omitempty"`
 	Description        string         `xml:"Description"`
@@ -56,11 +57,12 @@ type xmlSimpleTotals struct {
 }
 
 // buildSimpleTotals projects domain Totals into the narrow DocumentTotals
-// block shared by working and movement documents. TaxPayable reassembles
-// TaxTotal + StampDuty — the domain keeps them split (document.go contract).
+// block shared by working and movement documents. TaxPayable is derived as
+// Gross−Net at 2dp so round(Net)+round(Tax)==round(Gross) under sub-cent
+// accumulation — the same invariant as buildSalesTotals.
 func buildSimpleTotals(t domain.Totals) xmlSimpleTotals {
 	return xmlSimpleTotals{
-		TaxPayable: saftMoney(t.TaxTotal + t.StampDuty),
+		TaxPayable: saftMoney(domain.MoneyFromCents(t.GrossTotal.Cents() - t.NetTotal.Cents())),
 		NetTotal:   saftMoney(t.NetTotal),
 		GrossTotal: saftMoney(t.GrossTotal),
 	}
@@ -95,6 +97,10 @@ func buildLine(l domain.DocumentLine, side lineSide) xmlLine {
 		TaxPointDate:       fmtDate(l.TaxPointDate),
 		References:         buildDocRefs(l.References),
 		Description:        l.Product.ProductDescription,
+	}
+	if l.TaxBase != nil {
+		v := saftMoney(*l.TaxBase)
+		out.TaxBase = &v
 	}
 	if side == sideDebit {
 		out.DebitAmount = &net

@@ -226,6 +226,11 @@ func buildInvoiceEnvelope(creds soapCredentials, company domain.Company, inv dom
 		selfBill = 1
 	}
 
+	cashVAT := 0
+	if inv.SpecialRegimes.CashVAT {
+		cashVAT = 1
+	}
+
 	customerCountry := string(inv.Customer.BillingAddress.Country)
 	if customerCountry == "" {
 		customerCountry = "PT"
@@ -251,7 +256,7 @@ func buildInvoiceEnvelope(creds soapCredentials, company domain.Company, inv dom
 				InvoiceStatusDate: inv.StatusDate.Format("2006-01-02T15:04:05"),
 			},
 			HashCharacters:         hashChars,
-			CashVATSchemeIndicator: 0,
+			CashVATSchemeIndicator: cashVAT,
 			PaperLessIndicator:     0, // PaperLessIndicator 0 per the AT manual's example (v3.0 Oct 2025 §2.1.1.3); 1 requires actual paperless archival.
 			EACCode:                company.EACCode,
 			SystemEntryDate:        inv.SystemEntryDate.Format("2006-01-02T15:04:05"),

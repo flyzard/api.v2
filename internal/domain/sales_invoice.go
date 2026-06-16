@@ -323,6 +323,14 @@ func IssueSalesInvoice(draft *DraftSalesInvoice, series *Series, signer Signer, 
 			return SalesInvoice{}, fmt.Errorf("currency rate date %s does not match invoice date %s",
 				draft.Currency.Date.Format("2006-01-02"), date.Format("2006-01-02"))
 		}
+		// Currency amount must equal the document gross total. Check before
+		// issueCommon so a mismatch never advances the series counter (same
+		// invariant as the FR and withholding guards below).
+		draft.CalculateTotals()
+		if draft.Currency.Amount != draft.Totals.GrossTotal {
+			return SalesInvoice{}, fmt.Errorf("currency amount %s must equal document gross %s",
+				draft.Currency.Amount.Format2DP(), draft.Totals.GrossTotal.Format2DP())
+		}
 	}
 	if draft.DocumentType == ND {
 		if opts.Reader == nil {

@@ -124,6 +124,28 @@ func fixtureFSAnonymous(t *testing.T) domain.SalesInvoice {
 	return inv
 }
 
+func fixtureFTExempt(t *testing.T) domain.SalesInvoice {
+	t.Helper()
+	inv := fixtureFT(t)
+	line := fixtureLine(t)
+	tx, err := domain.NewVATLineTax(domain.PT, domain.TaxExempt, domain.M07, "Isento artigo 9.º do CIVA")
+	if err != nil {
+		t.Fatal(err)
+	}
+	line.Tax = tx
+	inv.Lines = []domain.DocumentLine{line}
+	inv.Totals = domain.Totals{
+		NetTotal: mustMoney(t, 200), TaxTotal: 0,
+		GrossTotal: mustMoney(t, 200), AmountPayable: mustMoney(t, 200),
+		Breakdown: domain.TaxBreakdown{{
+			Region: domain.PT, Category: domain.TaxExempt, ExemptionCode: domain.M07,
+			ExemptionDescription: domain.M07.Description(),
+			Base:                 mustMoney(t, 200), Tax: 0,
+		}},
+	}
+	return inv
+}
+
 func fixtureFT(t *testing.T) domain.SalesInvoice {
 	t.Helper()
 	return domain.SalesInvoice{

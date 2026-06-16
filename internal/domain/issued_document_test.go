@@ -165,6 +165,33 @@ func TestIssue_DateBeforeSeriesRegistration(t *testing.T) {
 	})
 }
 
+// TestValidateNoLiveRectifier pins the domain guard: nil slice → no error;
+// non-empty slice → ErrHasLiveRectifyingNote with the number in the message.
+func TestValidateNoLiveRectifier(t *testing.T) {
+	t.Run("nil_slice_ok", func(t *testing.T) {
+		if err := ValidateNoLiveRectifier(nil); err != nil {
+			t.Fatalf("expected nil, got %v", err)
+		}
+	})
+
+	t.Run("empty_slice_ok", func(t *testing.T) {
+		if err := ValidateNoLiveRectifier([]DocNumber{}); err != nil {
+			t.Fatalf("expected nil, got %v", err)
+		}
+	})
+
+	t.Run("one_rectifier_blocked", func(t *testing.T) {
+		n := mustVal(NewDocNumber(NC, "NC2026", 3))
+		err := ValidateNoLiveRectifier([]DocNumber{n})
+		if !errors.Is(err, ErrHasLiveRectifyingNote) {
+			t.Fatalf("err = %v, want ErrHasLiveRectifyingNote", err)
+		}
+		if msg := err.Error(); !strings.Contains(msg, n.Format()) {
+			t.Fatalf("err.Error() = %q, must contain %q", msg, n.Format())
+		}
+	})
+}
+
 // OU ("outros documentos") is a legal WorkType in the XSD — covers documents
 // presented to the customer for conference that fit no other code.
 func TestOUWorkTypeValid(t *testing.T) {

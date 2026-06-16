@@ -3,6 +3,7 @@ package pdf
 import (
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/johnfercher/maroto/v2/pkg/test"
 
@@ -15,6 +16,7 @@ func fixtureWorkDoc(t *testing.T) domain.WorkDocument {
 	wd := domain.WorkDocument{IssuedDocument: ft.IssuedDocument}
 	wd.Number = domain.DocNumber{Type: domain.PF, Series: "A2026", Seq: 5}
 	wd.DocumentType = domain.PF
+	wd.SystemEntryDate = time.Date(2026, 5, 10, 14, 30, 5, 0, time.UTC)
 	return wd
 }
 

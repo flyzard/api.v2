@@ -12,12 +12,17 @@ import (
 // TestExport_CurrencyAmountHalfAwayRounding pins CurrencyAmount to the integer
 // half-away-from-zero convention every other monetary field uses. The old
 // float path (Amount.Float64() × rate, %.2f) rounded half-to-even and drifted
-// on half-cents: €0.25 × 0.3 = 7.5 cents must render 0.08, float gave 0.07.
+// on half-cents: GrossTotal €0.25 × rate 0.3 = 7.5 cents must render 0.08;
+// CurrencyAmount is now derived from GrossTotal × rate (not Currency.Amount).
 func TestExport_CurrencyAmountHalfAwayRounding(t *testing.T) {
 	inv := minimalSalesInvoice()
+	// Override totals so GrossTotal = €0.25 (the half-cent rounding fixture).
+	inv.Totals.NetTotal = must(domain.NewMoney(0.25))
+	inv.Totals.TaxTotal = must(domain.NewMoney(0.00))
+	inv.Totals.GrossTotal = must(domain.NewMoney(0.25))
 	inv.Currency = &domain.Currency{
 		Code:         "USD",
-		Amount:       must(domain.NewMoney(0.25)),
+		Amount:       must(domain.NewMoney(0.25)), // must equal GrossTotal
 		ExchangeRate: must(domain.NewExchangeRate(0.3)),
 		Date:         inv.Date,
 	}

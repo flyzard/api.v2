@@ -313,13 +313,13 @@ func TestExport_ProductDescriptionDrift(t *testing.T) {
 
 // TestExport_CurrencyDirection pins the math direction in buildCurrency.
 // SAF-T CurrencyAmount = invoice gross in the original (foreign) currency;
-// our domain stores Amount in EUR and ExchangeRate as foreign-per-EUR
-// (e.g. 1.085 USD per 1 EUR), so the wire emission must be Amount × Rate.
-// Regression guard: if anyone flips the multiplication, large-currency
+// CurrencyAmount is derived from GrossTotal × ExchangeRate (not from the
+// Currency.Amount field), so a mis-set Amount cannot produce an inconsistent
+// figure. Regression guard: if anyone switches to net-as-gross, large-currency
 // invoices silently mis-report by orders of magnitude.
 func TestExport_CurrencyDirection(t *testing.T) {
 	inv := minimalSalesInvoice()
-	// Single line: 4 × €80 = €320 gross net (no tax on this fixture).
+	// Single line: 4 × €80 = €320 net, €393.60 gross (23% VAT).
 	inv.Lines[0].Quantity = must(domain.NewQuantity(4))
 	inv.Lines[0].UnitPrice = must(domain.NewMoney(80.00))
 	inv.Totals.NetTotal = must(domain.NewMoney(320.00))
@@ -327,7 +327,7 @@ func TestExport_CurrencyDirection(t *testing.T) {
 	inv.Totals.GrossTotal = must(domain.NewMoney(393.60))
 	currency := must(domain.NewCurrency(
 		must(domain.NewCurrencyCode("USD")),
-		must(domain.NewMoney(320.00)),       // EUR amount
+		must(domain.NewMoney(393.60)),       // EUR amount must equal GrossTotal
 		must(domain.NewExchangeRate(1.085)), // USD per EUR
 		inv.Date,
 	))
@@ -340,7 +340,7 @@ func TestExport_CurrencyDirection(t *testing.T) {
 	body := decodeWin1252(t, out)
 	wants := []string{
 		`<CurrencyCode>USD</CurrencyCode>`,
-		`<CurrencyAmount>347.20</CurrencyAmount>`, // 320.00 × 1.085 = 347.20
+		`<CurrencyAmount>427.06</CurrencyAmount>`, // 393.60 × 1.085 = 427.056 → 427.06
 		`<ExchangeRate>1.085000</ExchangeRate>`,
 	}
 	for _, w := range wants {

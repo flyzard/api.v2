@@ -1,7 +1,9 @@
 package pdf
 
 import (
+	"cmp"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/johnfercher/maroto/v2/pkg/components/col"
@@ -46,10 +48,11 @@ func divider(height float64) core.Row {
 
 // docIdentity is what the page header prints about the document itself.
 type docIdentity struct {
-	Type    domain.DocumentType
-	Number  domain.DocNumber
-	Date    time.Time
-	DueDate *time.Time
+	Type        domain.DocumentType
+	Number      domain.DocNumber
+	Date        time.Time
+	DueDate     *time.Time
+	SystemEntry *time.Time // working docs print this (date+time); nil = not printed
 }
 
 // headerRows builds the per-page document header: seller block (+ optional
@@ -85,6 +88,10 @@ func headerRows(m Meta, id docIdentity, cust domain.Customer) []core.Row {
 	if id.DueDate != nil {
 		dateLine = "Vencimento: " + fmtDate(*id.DueDate) + " · " + dateLine
 	}
+	var sysLine string
+	if id.SystemEntry != nil && !id.SystemEntry.IsZero() {
+		sysLine = "Entrada no sistema: " + fmtDateTime(*id.SystemEntry)
+	}
 
 	// The via designation gets its own bold row — 2026 certification feedback
 	// requires "Original"/"Duplicado"/"2.ª via" clearly printed on each copy
@@ -105,8 +112,14 @@ func headerRows(m Meta, id docIdentity, cust domain.Customer) []core.Row {
 			col.New(7),
 			text.NewCol(5, dateLine, props.Text{Size: 7, Color: gray, Align: align.Right}),
 		),
-		divider(3),
 	}
+	if sysLine != "" {
+		rows = append(rows, row.New(3.5).Add(
+			col.New(7),
+			text.NewCol(5, sysLine, props.Text{Size: 7, Color: gray, Align: align.Right}),
+		))
+	}
+	rows = append(rows, divider(3))
 	rows = append(rows, customerRows(cust, id.Type)...)
 	rows = append(rows, row.New(3))
 	return rows
@@ -126,12 +139,12 @@ func customerRows(c domain.Customer, dt domain.DocumentType) []core.Row {
 	hasNIF := !c.IsAnonymous() && c.CustomerTaxID != domain.FinalConsumerNIF
 	if dt == domain.FS {
 		if !hasNIF {
-			return []core.Row{label, bold("Consumidor final")}
+			return []core.Row{label, bold("NIF: Consumidor final")}
 		}
 		return []core.Row{label, bold("NIF: " + string(c.CustomerTaxID))}
 	}
 	if c.IsAnonymous() {
-		return []core.Row{label, bold("Consumidor final")}
+		return []core.Row{label, bold("NIF: Consumidor final")}
 	}
 	name := c.CompanyName
 	if hasNIF {
@@ -215,7 +228,11 @@ func lineTaxLabel(t domain.LineTax) string {
 	switch v := t.(type) {
 	case domain.VATTax:
 		if v.Rate.Category == domain.TaxExempt {
-			return "Isento"
+			code := v.Rate.Exemption
+			if code.IsReverseCharge() {
+				return "Autoliq. (" + string(code) + ")"
+			}
+			return "Isento (" + string(code) + ")"
 		}
 		return fmtPercent(v.Rate.Value)
 	case domain.StampTax:
@@ -297,6 +314,40 @@ func taxEntryLabel(e domain.TaxBreakdownEntry, lines []domain.DocumentLine) stri
 	return string(e.Category) + " (" + string(e.Region) + ")"
 }
 
+// vatCategoryRank orders VAT summary rows from exempt up to the normal rate
+// (AT cert review). Ranks by rate TIER via the category enum, not the live rate
+// value, so a reprint never shifts when the statutory table changes; OUT has no
+// canonical tier and sorts last.
+func vatCategoryRank(c domain.TaxCategory) int {
+	switch c {
+	case domain.TaxExempt:
+		return 0
+	case domain.TaxReduced:
+		return 1
+	case domain.TaxIntermediate:
+		return 2
+	case domain.TaxNormal:
+		return 3
+	default: // TaxOther / unknown
+		return 4
+	}
+}
+
+// displayBreakdown returns a re-sorted COPY for the printed VAT summary only.
+// The domain order (sortTaxBreakdown) feeds the frozen QR and persisted
+// Totals.Breakdown and must NOT change, so we sort a clone here.
+func displayBreakdown(b domain.TaxBreakdown) domain.TaxBreakdown {
+	out := slices.Clone(b)
+	slices.SortFunc(out, func(x, y domain.TaxBreakdownEntry) int {
+		return cmp.Or(
+			cmp.Compare(x.Region, y.Region),
+			cmp.Compare(vatCategoryRank(x.Category), vatCategoryRank(y.Category)),
+			cmp.Compare(x.ExemptionCode, y.ExemptionCode),
+		)
+	})
+	return out
+}
+
 // totalEntry is one label/value pair on the totals block.
 type totalEntry struct {
 	label string
@@ -352,6 +403,7 @@ func withholdingLabel(w domain.WithholdingTax) string {
 // totals block (right, 5 grid cols), then appends the exemption-description
 // and global-discount footnotes. Either side may be empty.
 func summaryAndTotalsRows(b domain.TaxBreakdown, lines []domain.DocumentLine, totals []totalEntry) []core.Row {
+	b = displayBreakdown(b) // print-only order; domain Breakdown (frozen QR) untouched
 	var left [][]core.Col
 	if len(b) > 0 {
 		left = append(left, []core.Col{
@@ -435,6 +487,16 @@ func regimeRows(r domain.SpecialRegimes) []core.Row {
 		mention("Autofaturação")
 	}
 	return rows
+}
+
+// thirdPartyRows prints the Portaria 363/2010 mention for guias issued on behalf
+// of third parties (DocumentStatus 'T'). Slogan only — the third-party identity
+// is not modelled (StockMovementFields carries no party fields).
+func thirdPartyRows() []core.Row {
+	return []core.Row{
+		row.New(4).Add(text.NewCol(12, "Por conta de terceiros",
+			props.Text{Size: 8, Style: fontstyle.Bold})),
+	}
 }
 
 // currencyRows prints the original-currency note for non-EUR documents.

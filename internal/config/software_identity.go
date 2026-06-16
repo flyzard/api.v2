@@ -7,6 +7,7 @@ package config
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/flyzard/invoicing.v2/internal/domain"
 )
@@ -31,14 +32,25 @@ func (s SoftwareIdentity) Validate() error {
 	if n := len(s.SoftwareName); n < 1 || n > 50 {
 		return fmt.Errorf("software name length must be 1..50, got %d", n)
 	}
+	if strings.ContainsRune(s.SoftwareName, '/') {
+		return fmt.Errorf("software name must not contain '/': %q", s.SoftwareName)
+	}
 	if n := len(s.ProducerName); n < 1 || n > 100 {
 		return fmt.Errorf("producer name length must be 1..100, got %d", n)
+	}
+	if strings.ContainsRune(s.ProducerName, '/') {
+		return fmt.Errorf("producer name must not contain '/': %q", s.ProducerName)
 	}
 	if n := len(s.Version); n < 1 || n > 30 {
 		return fmt.Errorf("version length must be 1..30, got %d", n)
 	}
 	if n := len(s.CertificateNumber); n < 1 || n > 10 {
 		return fmt.Errorf("certificate number length must be 1..10, got %d", n)
+	}
+	for _, r := range s.CertificateNumber {
+		if r < '0' || r > '9' {
+			return fmt.Errorf("certificate number must be numeric (SAF-T xs:nonNegativeInteger), got %q", s.CertificateNumber)
+		}
 	}
 	return nil
 }

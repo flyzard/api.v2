@@ -17,6 +17,9 @@ func NewATCUD(series Series, seq int) (ATCUD, error) {
 	if !series.IsRegistered() {
 		return "", fmt.Errorf("series %q is not registered with AT", series.ID)
 	}
+	if err := ValidateATCode(series.ATCode); err != nil {
+		return "", fmt.Errorf("series %q has invalid AT code: %w", series.ID, err)
+	}
 	atcud := ATCUD(series.ATCode + "-" + strconv.Itoa(seq))
 	if len(atcud) > MaxLenATCUD {
 		return "", fmt.Errorf("atcud exceeds %d chars: %q", MaxLenATCUD, atcud)

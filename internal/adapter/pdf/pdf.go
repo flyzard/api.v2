@@ -32,8 +32,9 @@ type CopyKind int
 const (
 	Original CopyKind = iota
 	Duplicado
-	Triplicado // transport documents must print three copies (DL 28/2019 Art. 6)
-	SegundaVia // reprint
+	Triplicado    // transport documents must print three copies (DL 28/2019 Art. 6)
+	Quadruplicado // transport guides: AT resubmission asks a 4th via (RBC art. 5.º n.º 12)
+	SegundaVia    // reprint
 )
 
 func (c CopyKind) label() string {
@@ -42,6 +43,8 @@ func (c CopyKind) label() string {
 		return "Duplicado"
 	case Triplicado:
 		return "Triplicado"
+	case Quadruplicado:
+		return "Quadruplicado"
 	case SegundaVia:
 		return "2.ª via"
 	default:
@@ -51,11 +54,11 @@ func (c CopyKind) label() string {
 
 // RequiredVias is the set of copies a first emission must print: every
 // document gets "Original" + "Duplicado" (Art. 36 n.º 4 CIVA / DL 28/2019
-// Art. 6 n.º 1); transport documents must print three vias. Reprints use
-// SegundaVia instead and are the caller's decision.
+// Art. 6 n.º 1); transport documents must print four vias (RBC art. 5.º n.º 12).
+// Reprints use SegundaVia instead and are the caller's decision.
 func RequiredVias(dt domain.DocumentType) []CopyKind {
 	if dt.IsTransport() {
-		return []CopyKind{Original, Duplicado, Triplicado}
+		return []CopyKind{Original, Duplicado, Triplicado, Quadruplicado}
 	}
 	return []CopyKind{Original, Duplicado}
 }

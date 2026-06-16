@@ -52,14 +52,19 @@ func newEngine() (core.Maroto, error) {
 // The QR block is NOT registered here — build* appends qrRows as the last
 // content rows (see qrRows for why it must flow with the content).
 // footerATCUD: see legalFooterRows.
+// cancelled: when true, forces m.Copy = Original — annulled reprints keep the
+// Original label (CIVA art. 36.º n.º 4); the ANULADO banner is still drawn.
 func newDocEngine(m Meta, id docIdentity, cust domain.Customer,
-	atcud domain.ATCUD, hash domain.Hash, footerATCUD bool) (core.Maroto, error) {
+	atcud domain.ATCUD, hash domain.Hash, footerATCUD bool, cancelled bool) (core.Maroto, error) {
 	if err := m.validate(); err != nil {
 		return nil, err
 	}
 	eng, err := newEngine()
 	if err != nil {
 		return nil, err
+	}
+	if cancelled {
+		m.Copy = Original // annulled reprints keep Original (CIVA art. 36.º n.º 4); banner still drawn
 	}
 	if err := eng.RegisterHeader(headerRows(m, id, cust)...); err != nil {
 		return nil, err

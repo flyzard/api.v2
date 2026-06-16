@@ -30,6 +30,9 @@ type Tenant struct {
 	CommMode CommMode
 	Calendar domain.HolidayCalendar
 	FSLimits *domain.FSLimits
+
+	AllowUnknownAllocSource bool // NC/ND may reference pre-system / manually-issued sources
+	AllowRappelNC           bool // volume-discount NCs may exceed per-source gross (SOFT ceiling)
 }
 
 // TenantStore resolves a tenant by ID (loads company, credentials, config).

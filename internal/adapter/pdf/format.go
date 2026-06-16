@@ -46,6 +46,8 @@ func fmtEUR(m domain.Money) string { return commaDecimal(m.Format2DP()) + " €"
 
 func fmtDate(t time.Time) string { return t.Format("2006-01-02") }
 
+func fmtDateTime(t time.Time) string { return t.Format("2006-01-02 15:04:05") }
+
 func fmtPercent(p domain.Percent) string {
 	return commaDecimal(p.Format2DP()) + "%"
 }

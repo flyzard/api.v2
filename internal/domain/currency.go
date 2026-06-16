@@ -79,20 +79,20 @@ func NewCurrency(code CurrencyCode, amount Money, rate ExchangeRate, date time.T
 	return c, c.Validate()
 }
 
-// NativeAmount reconstructs the foreign-currency amount (Amount × ExchangeRate)
-// on the scaled ints, rounding half-away-from-zero like Format2DP — a float
-// round-trip drifts on half-cents and %.2f rounds half-to-even. Computed in
-// cents (Amount is constructor-gated to cent precision) so overflow needs
-// cents × rate > 2^63 (e.g. €540M at JPY≈170/EUR); the panic mirrors Money.Mul's
-// programmer-error guard.
-func (c Currency) NativeAmount() Money {
-	cents := int64(c.Amount) / centScale
+// Convert renders an EUR Money amount into this currency (eur × ExchangeRate),
+// rounding half-away-from-zero on the scaled ints — the package convention
+// (a float round-trip drifts on half-cents; %.2f rounds half-to-even).
+func (c Currency) Convert(eur Money) Money {
+	cents := int64(eur) / centScale
 	rate := int64(c.ExchangeRate)
 	if cents != 0 && rate != 0 && abs64(rate) > math.MaxInt64/abs64(cents) {
-		panic(fmt.Sprintf("Currency.NativeAmount overflow: %d¢ × %d", cents, rate))
+		panic(fmt.Sprintf("Currency.Convert overflow: %d¢ × %d", cents, rate))
 	}
 	return Money(roundDiv(cents*rate, exchangeRateScale) * centScale)
 }
+
+// NativeAmount is the foreign-currency view of the (EUR) Amount field.
+func (c Currency) NativeAmount() Money { return c.Convert(c.Amount) }
 
 func (c Currency) Validate() error {
 	if !c.Code.IsValid() {

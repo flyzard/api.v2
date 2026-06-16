@@ -235,7 +235,7 @@
 							"type": "col",
 							"nodes": [
 								{
-									"value": "Consumidor final",
+									"value": "NIF: Consumidor final",
 									"type": "text",
 									"details": {
 										"prop_align": "L",

@@ -70,6 +70,16 @@ func TestCurrencyDateGuardNormalizesToLisbon(t *testing.T) {
 			Date:         time.Date(2026, 6, day, 0, 0, 0, 0, time.UTC),
 		}
 	}
+	// salesCurrency returns a currency with Amount equal to the sales invoice
+	// gross (10.00 net + 23% VAT = 12.30) so the issuance guard passes.
+	salesCurrency := func(day int) *Currency {
+		return &Currency{
+			Code:         "USD",
+			Amount:       mustVal(NewMoney(12.30)), // equals gross: 10.00 + 23% VAT
+			ExchangeRate: ExchangeRate(1_085_000),  // 1.085
+			Date:         time.Date(2026, 6, day, 0, 0, 0, 0, time.UTC),
+		}
+	}
 
 	salesDraft := func(series Series, cur *Currency) *DraftSalesInvoice {
 		draft := &DraftSalesInvoice{}
@@ -95,7 +105,7 @@ func TestCurrencyDateGuardNormalizesToLisbon(t *testing.T) {
 
 	t.Run("sales-same-day-utc-accepted", func(t *testing.T) {
 		series := registeredSeries(t)
-		draft := salesDraft(series, currency(5))
+		draft := salesDraft(series, salesCurrency(5))
 		if _, err := IssueSalesInvoice(draft, &series, m16StubSigner{}, "tester", now, IssueOptions{}, qr); err != nil {
 			t.Fatalf("same-calendar-day UTC currency date rejected: %v", err)
 		}
@@ -103,7 +113,7 @@ func TestCurrencyDateGuardNormalizesToLisbon(t *testing.T) {
 
 	t.Run("sales-different-day-rejected", func(t *testing.T) {
 		series := registeredSeries(t)
-		draft := salesDraft(series, currency(4))
+		draft := salesDraft(series, salesCurrency(4))
 		_, err := IssueSalesInvoice(draft, &series, m16StubSigner{}, "tester", now, IssueOptions{}, qr)
 		if err == nil || !strings.Contains(err.Error(), "currency rate date") {
 			t.Fatalf("error = %v, want currency rate date mismatch", err)

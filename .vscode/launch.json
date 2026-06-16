@@ -10,11 +10,11 @@
         "cwd": "${workspaceFolder}"
     },
     {
-        "name": "Launch cmd/demo",
+        "name": "Launch cmd/appsmoke",
         "type": "go",
         "request": "launch",
         "mode": "auto",
-        "program": "${workspaceFolder}/cmd/demo",
+        "program": "${workspaceFolder}/cmd/appsmoke",
         "cwd": "${workspaceFolder}"
     },
     {

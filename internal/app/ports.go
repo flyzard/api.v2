@@ -60,7 +60,31 @@ type DocumentRepo interface {
 	GetPayment(domain.DocNumber) (domain.Payment, error)
 	// PaymentsInPeriod selects by TransactionDate (payments carry no DocumentCore.Date).
 	PaymentsInPeriod(from, to time.Time) ([]domain.Payment, error)
+
+	// LiveRectifyingNotes returns this tenant's NON-cancelled NC/ND sales docs
+	// that carry a line DocReference to `number` (Despacho 8632/2014 §3.3.8).
+	LiveRectifyingNotes(number domain.DocNumber) ([]domain.SalesInvoice, error)
+
+	// SourceState returns the consumable state (CustomerID/Status/Gross) plus
+	// Consumed (sum of prior non-cancelled allocations on the given axis) for an
+	// issued document by number, for allocation validation. Returns ErrNotFound if absent.
+	//
+	// AllocSettlement: Consumed = sum of non-cancelled RC/RG receipt settlements only.
+	// AllocCredit:     Consumed = sum of non-cancelled NC line grosses only (ND excluded).
+	SourceState(number domain.DocNumber, axis AllocAxis) (domain.SourceDocState, error)
 }
+
+// AllocAxis distinguishes the two independent allocation ceilings on a source document.
+type AllocAxis int
+
+const (
+	// AllocSettlement is the receipt settlement axis (RC/RG PaymentLine.SourceDocuments).
+	// Ceiling is HARD: a debit note (ND) does NOT count against this ceiling.
+	AllocSettlement AllocAxis = iota
+	// AllocCredit is the credit-note axis (NC line grosses only; ND excluded).
+	// Ceiling is enforced but can be relaxed via AllocationPolicy.SkipSourceCeiling (rappel).
+	AllocCredit
+)
 
 // OutboxRepo is the enqueue side of the AT-communication outbox — transactional
 // and tenant-bound. The cross-tenant worker-side queue arrives in a later plan.

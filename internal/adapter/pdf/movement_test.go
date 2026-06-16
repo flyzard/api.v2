@@ -33,3 +33,18 @@ func TestBuildStockMovement_Structure(t *testing.T) {
 	}
 	test.New(t).Assert(eng.GetStructure()).Equals("gt_basic.json")
 }
+
+func fixtureGTThirdParty(t *testing.T) domain.StockMovement {
+	t.Helper()
+	sm := fixtureGT(t)
+	sm.Status = domain.StatusThirdParty
+	return sm
+}
+
+func TestBuildStockMovement_ThirdParty(t *testing.T) {
+	eng, err := buildStockMovement(fixtureGTThirdParty(t), validMeta(), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	test.New(t).Assert(eng.GetStructure()).Equals("gt_third_party.json")
+}

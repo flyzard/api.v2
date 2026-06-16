@@ -176,6 +176,33 @@
 					]
 				},
 				{
+					"value": 3.5,
+					"type": "row",
+					"nodes": [
+						{
+							"value": 7,
+							"type": "col"
+						},
+						{
+							"value": 5,
+							"type": "col",
+							"nodes": [
+								{
+									"value": "Entrada no sistema: 2026-05-10 14:30:05",
+									"type": "text",
+									"details": {
+										"prop_align": "R",
+										"prop_breakline_strategy": "empty_space_strategy",
+										"prop_color": "RGB(110, 110, 110)",
+										"prop_font_family": "liberation",
+										"prop_font_size": 7
+									}
+								}
+							]
+						}
+					]
+				},
+				{
 					"value": 3,
 					"type": "row",
 					"nodes": [
@@ -918,7 +945,7 @@
 					]
 				},
 				{
-					"value": 151.075277777,
+					"value": 147.575277777,
 					"type": "row",
 					"nodes": [
 						{

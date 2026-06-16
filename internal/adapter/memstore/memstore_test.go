@@ -299,6 +299,158 @@ func TestSalesInPeriod_FiltersByDate(t *testing.T) {
 	}
 }
 
+// TestLiveRectifyingNotes pins the memstore scan that the V1 cancel guard uses.
+func TestLiveRectifyingNotes(t *testing.T) {
+	ctx := context.Background()
+	lisbon, _ := time.LoadLocation("Europe/Lisbon")
+	now := time.Date(2026, 5, 22, 9, 0, 0, 0, lisbon)
+
+	ftNum := mustVal2(domain.NewDocNumber(domain.FT, "FT2026", 1))
+	ncNum := mustVal2(domain.NewDocNumber(domain.NC, "NC2026", 1))
+	ndNum := mustVal2(domain.NewDocNumber(domain.ND, "ND2026", 1))
+
+	// helper: build a minimal SalesInvoice with a given NC/ND referencing target
+	makeNC := func(n domain.DocNumber, target string, cancelled bool) domain.SalesInvoice {
+		si := domain.SalesInvoice{}
+		si.Number = n
+		si.DocumentType = n.Type
+		si.Date = now
+		si.Lines = []domain.DocumentLine{{
+			LineNumber: 1,
+			References: []domain.DocReference{{Reference: target}},
+		}}
+		if cancelled {
+			si.Status = domain.StatusCancelled
+		} else {
+			si.Status = domain.StatusNormal
+		}
+		return si
+	}
+
+	t.Run("live_NC_referencing_FT_returned", func(t *testing.T) {
+		s := New()
+		ft := domain.SalesInvoice{}
+		ft.Number = ftNum
+		ft.DocumentType = domain.FT
+		ft.Status = domain.StatusNormal
+
+		nc := makeNC(ncNum, ftNum.Format(), false)
+
+		_ = s.Run(ctx, "t", func(tx app.RepoSet) error {
+			_ = tx.Documents().SaveSalesInvoice(ft)
+			return tx.Documents().SaveSalesInvoice(nc)
+		})
+
+		var got []domain.SalesInvoice
+		_ = s.Run(ctx, "t", func(tx app.RepoSet) error {
+			var err error
+			got, err = tx.Documents().LiveRectifyingNotes(ftNum)
+			return err
+		})
+		if len(got) != 1 || got[0].Number.Seq != 1 {
+			t.Fatalf("got %d results, want 1 NC", len(got))
+		}
+	})
+
+	t.Run("cancelled_NC_excluded", func(t *testing.T) {
+		s := New()
+		nc := makeNC(ncNum, ftNum.Format(), true /* cancelled */)
+		_ = s.Run(ctx, "t", func(tx app.RepoSet) error {
+			return tx.Documents().SaveSalesInvoice(nc)
+		})
+		var got []domain.SalesInvoice
+		_ = s.Run(ctx, "t", func(tx app.RepoSet) error {
+			var err error
+			got, err = tx.Documents().LiveRectifyingNotes(ftNum)
+			return err
+		})
+		if len(got) != 0 {
+			t.Fatalf("cancelled NC must not appear, got %d", len(got))
+		}
+	})
+
+	t.Run("live_ND_included", func(t *testing.T) {
+		s := New()
+		nd := makeNC(ndNum, ftNum.Format(), false)
+		nd.DocumentType = domain.ND
+		_ = s.Run(ctx, "t", func(tx app.RepoSet) error {
+			return tx.Documents().SaveSalesInvoice(nd)
+		})
+		var got []domain.SalesInvoice
+		_ = s.Run(ctx, "t", func(tx app.RepoSet) error {
+			var err error
+			got, err = tx.Documents().LiveRectifyingNotes(ftNum)
+			return err
+		})
+		if len(got) != 1 {
+			t.Fatalf("live ND must appear, got %d", len(got))
+		}
+	})
+
+	t.Run("FT_referencing_FT_excluded", func(t *testing.T) {
+		s := New()
+		// An FT whose line references the target (edge case: not NC/ND)
+		ft2Num := mustVal2(domain.NewDocNumber(domain.FT, "FT2026", 2))
+		ft2 := makeNC(ft2Num, ftNum.Format(), false)
+		ft2.DocumentType = domain.FT
+		_ = s.Run(ctx, "t", func(tx app.RepoSet) error {
+			return tx.Documents().SaveSalesInvoice(ft2)
+		})
+		var got []domain.SalesInvoice
+		_ = s.Run(ctx, "t", func(tx app.RepoSet) error {
+			var err error
+			got, err = tx.Documents().LiveRectifyingNotes(ftNum)
+			return err
+		})
+		if len(got) != 0 {
+			t.Fatalf("FT must not appear even if it references target, got %d", len(got))
+		}
+	})
+
+	t.Run("unparseable_ref_no_panic", func(t *testing.T) {
+		s := New()
+		si := domain.SalesInvoice{}
+		si.Number = ncNum
+		si.DocumentType = domain.NC
+		si.Status = domain.StatusNormal
+		si.Lines = []domain.DocumentLine{{
+			LineNumber: 1,
+			References: []domain.DocReference{{Reference: "not-a-doc-number"}},
+		}}
+		_ = s.Run(ctx, "t", func(tx app.RepoSet) error {
+			return tx.Documents().SaveSalesInvoice(si)
+		})
+		var got []domain.SalesInvoice
+		_ = s.Run(ctx, "t", func(tx app.RepoSet) error {
+			var err error
+			got, err = tx.Documents().LiveRectifyingNotes(ftNum)
+			return err
+		})
+		if len(got) != 0 {
+			t.Fatalf("unparseable ref must not match, got %d", len(got))
+		}
+	})
+
+	t.Run("tenant_isolation", func(t *testing.T) {
+		s := New()
+		nc := makeNC(ncNum, ftNum.Format(), false)
+		// Store the NC under tenant "a"
+		_ = s.Run(ctx, "a", func(tx app.RepoSet) error {
+			return tx.Documents().SaveSalesInvoice(nc)
+		})
+		// Query from tenant "b" — must see nothing
+		var got []domain.SalesInvoice
+		_ = s.Run(ctx, "b", func(tx app.RepoSet) error {
+			var err error
+			got, err = tx.Documents().LiveRectifyingNotes(ftNum)
+			return err
+		})
+		if len(got) != 0 {
+			t.Fatalf("tenant b must not see tenant a's NC, got %d", len(got))
+		}
+	})
+}
+
 func TestOutboxFind_ByTenantAndNumber(t *testing.T) {
 	s := New()
 	num := mustVal2(domain.NewDocNumber(domain.FT, "FT2026", 1))
@@ -313,4 +465,127 @@ func TestOutboxFind_ByTenantAndNumber(t *testing.T) {
 	if _, ok, _ := s.Find("other", num); ok {
 		t.Fatal("task must not be found for a different tenant")
 	}
+}
+
+// TestSourceState_ConsumedAgainst pins the B3-a SourceState + consumedAgainst logic.
+// Since the fix the two axes are separate:
+//
+//	FT gross 100 (€100.00 = 10_000_000)
+//	NC referencing FT, line gross 40 (€40.00 = 4_000_000)
+//	cancelled NC referencing FT → excluded from AllocCredit axis
+//	RG settling FT for 30 (€30.00 = 3_000_000)
+//	AllocCredit  axis: Consumed == 4_000_000  (NC only, cancelled NC excluded)
+//	AllocSettlement axis: Consumed == 3_000_000  (RG only)
+//	unknown number → ErrNotFound
+func TestSourceState_ConsumedAgainst(t *testing.T) {
+	ctx := context.Background()
+
+	ftNum := mustVal2(domain.NewDocNumber(domain.FT, "FT2026", 1))
+	ncNum := mustVal2(domain.NewDocNumber(domain.NC, "NC2026", 1))
+	ncCancelledNum := mustVal2(domain.NewDocNumber(domain.NC, "NC2026", 2))
+	rgNum := mustVal2(domain.NewDocNumber(domain.RG, "RG2026", 1))
+	unknownNum := mustVal2(domain.NewDocNumber(domain.FT, "FT2026", 99))
+
+	// FT: gross €100.00 (raw 10_000_000 = 100 × 100_000 internal units)
+	ft := domain.SalesInvoice{}
+	ft.Number = ftNum
+	ft.DocumentType = domain.FT
+	ft.Status = domain.StatusNormal
+	ft.Totals.GrossTotal = domain.Money(10_000_000)
+
+	// NC referencing FT: line UnitPrice €40.00 × qty 1, no tax → LineTotal = 4_000_000
+	nc := domain.SalesInvoice{}
+	nc.Number = ncNum
+	nc.DocumentType = domain.NC
+	nc.Status = domain.StatusNormal
+	nc.Lines = []domain.DocumentLine{{
+		LineNumber: 1,
+		UnitPrice:  domain.Money(4_000_000),  // €40.00
+		Quantity:   domain.Quantity(100_000), // 1.00 unit at scale
+		References: []domain.DocReference{{Reference: ftNum.Format()}},
+	}}
+
+	// Cancelled NC referencing FT: must be excluded from Consumed
+	ncCancelled := domain.SalesInvoice{}
+	ncCancelled.Number = ncCancelledNum
+	ncCancelled.DocumentType = domain.NC
+	ncCancelled.Status = domain.StatusCancelled
+	ncCancelled.Lines = []domain.DocumentLine{{
+		LineNumber: 1,
+		UnitPrice:  domain.Money(2_000_000), // €20.00 — must not count
+		Quantity:   domain.Quantity(100_000),
+		References: []domain.DocReference{{Reference: ftNum.Format()}},
+	}}
+
+	// RG settling FT for €30.00 (raw 3_000_000)
+	rg := domain.Payment{}
+	rg.Number = rgNum
+	rg.Status = domain.StatusNormal
+	rg.Lines = []domain.PaymentLine{{
+		LineNumber: 1,
+		Movement:   domain.CreditAmount{Value: domain.Money(3_000_000)}, // €30.00
+		SourceDocuments: []domain.SourceDocumentID{{
+			OriginatingON: ftNum.Format(),
+			InvoiceDate:   time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC),
+		}},
+	}}
+
+	s := New()
+	if err := s.Run(ctx, "t", func(tx app.RepoSet) error {
+		if e := tx.Documents().SaveSalesInvoice(ft); e != nil {
+			return e
+		}
+		if e := tx.Documents().SaveSalesInvoice(nc); e != nil {
+			return e
+		}
+		if e := tx.Documents().SaveSalesInvoice(ncCancelled); e != nil {
+			return e
+		}
+		return tx.Documents().SavePayment(rg)
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// AllocCredit axis: NC gross 40 consumed (cancelled NC excluded); RG not counted.
+	t.Run("credit_axis_NC_gross_40", func(t *testing.T) {
+		var st domain.SourceDocState
+		_ = s.Run(ctx, "t", func(tx app.RepoSet) error {
+			var err error
+			st, err = tx.Documents().SourceState(ftNum, app.AllocCredit)
+			return err
+		})
+		if st.Consumed != domain.Money(4_000_000) {
+			t.Fatalf("AllocCredit Consumed = %d, want 4_000_000 (NC only)", st.Consumed)
+		}
+		if st.Gross != domain.Money(10_000_000) {
+			t.Fatalf("Gross = %d, want 10_000_000", st.Gross)
+		}
+		if st.Status != domain.StatusNormal {
+			t.Fatalf("Status = %q, want N", st.Status)
+		}
+	})
+
+	// AllocSettlement axis: RG settle 30 consumed; NC not counted.
+	t.Run("settlement_axis_RG_gross_30", func(t *testing.T) {
+		var st domain.SourceDocState
+		_ = s.Run(ctx, "t", func(tx app.RepoSet) error {
+			var err error
+			st, err = tx.Documents().SourceState(ftNum, app.AllocSettlement)
+			return err
+		})
+		if st.Consumed != domain.Money(3_000_000) {
+			t.Fatalf("AllocSettlement Consumed = %d, want 3_000_000 (RG only)", st.Consumed)
+		}
+	})
+
+	// Unknown number → ErrNotFound (axis is irrelevant for the not-found check)
+	t.Run("unknown_number_ErrNotFound", func(t *testing.T) {
+		err := s.Run(ctx, "t", func(tx app.RepoSet) error {
+			_, gerr := tx.Documents().SourceState(unknownNum, app.AllocCredit)
+			return gerr
+		})
+		if !errors.Is(err, app.ErrNotFound) {
+			t.Fatalf("err = %v, want ErrNotFound", err)
+		}
+	})
 }

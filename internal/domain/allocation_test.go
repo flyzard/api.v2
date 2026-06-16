@@ -80,7 +80,7 @@ func TestValidateAllocations(t *testing.T) {
 		err := ValidateAllocations(allocCustomer,
 			map[string]Money{ft: Money(10 * scale)},
 			map[string]SourceDocState{ft: src},
-			AllocationPolicy{SkipCeiling: true}) // ceiling skip must not bypass status check
+			AllocationPolicy{SkipSourceCeiling: true}) // ceiling skip must not bypass status check
 		if !errors.Is(err, ErrSourceDocCancelled) {
 			t.Fatalf("err = %v, want ErrSourceDocCancelled", err)
 		}
@@ -102,7 +102,7 @@ func TestValidateAllocations(t *testing.T) {
 		err := ValidateAllocations(allocCustomer,
 			map[string]Money{ft: Money(500 * scale)},
 			map[string]SourceDocState{ft: sourceFT(Money(100*scale), Money(50*scale))},
-			AllocationPolicy{SkipCeiling: true})
+			AllocationPolicy{SkipSourceCeiling: true})
 		if err != nil {
 			t.Fatalf("skip-ceiling overrun rejected: %v", err)
 		}

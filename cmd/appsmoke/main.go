@@ -1,9 +1,10 @@
 // Command appsmoke drives the full AT certification §5 walkthrough through the
-// internal/app service layer (memstore-backed) instead of calling the domain
-// layer directly the way cmd/demo does. It is the answer to "should the demo go
-// through internal/app?": the scenarios are shared (internal/certkit), only the
-// issuance seam differs — here every family is issued via app.InvoicingService,
-// and the SAF-T is produced by app.ExportService.
+// internal/app service layer (memstore-backed): every family is issued via
+// app.InvoicingService and the SAF-T is produced by app.ExportService. The
+// fixtures, the thirteen scenarios, and the PDF/checklist writers are local to
+// this binary (fixtures.go, scenarios.go, support.go, artifacts.go); scenarios
+// issue through the Ctx helpers (ctx.go), so their bodies never name the app
+// layer directly.
 package main
 
 import (
@@ -18,7 +19,6 @@ import (
 
 	"github.com/flyzard/invoicing.v2/internal/adapter/memstore"
 	"github.com/flyzard/invoicing.v2/internal/app"
-	"github.com/flyzard/invoicing.v2/internal/certkit"
 	"github.com/flyzard/invoicing.v2/internal/config"
 )
 
@@ -58,18 +58,21 @@ func smokeSoftware() config.SoftwareIdentity {
 }
 
 func main() {
-	loc := certkit.MustLisbon()
+	loc := MustLisbon()
 	today := time.Date(2026, 5, 22, 0, 0, 0, 0, loc)
 	clockBase := time.Date(2026, 5, 22, 9, 0, 0, 0, loc)
 	prevMonthDay := time.Date(2026, 4, 22, 0, 0, 0, 0, loc)
 	prevMonthClock := time.Date(2026, 4, 22, 9, 0, 0, 0, loc)
 
 	// One clock drives both the scenarios and the app's SystemEntryDate stamping,
-	// so the April prologue carries April system-entry dates exactly like cmd/demo.
-	clock := certkit.NewClock(prevMonthClock, time.Minute)
+	// so the April prologue carries April system-entry dates.
+	clock := NewClock(prevMonthClock, time.Minute)
 
-	f := certkit.BuildFixtures(prevMonthClock)
+	f := BuildFixtures(prevMonthClock)
 	sw := smokeSoftware()
+	if err := sw.Validate(); err != nil {
+		log.Fatalf("invalid software identity: %v", err)
+	}
 
 	// App stack backed by memstore. Series are seeded already AT-registered,
 	// exactly as the app's own tests do, so issuance has an issuable series.
@@ -90,36 +93,35 @@ func main() {
 		Software: sw,
 	})
 
-	iss := newAppIssuer(svc, tenantID, f.IssuerUser.Email, clock)
-	c := certkit.NewCtx(f, clock, certkit.NewStore(), iss)
+	c := NewCtx(f, clock, NewStore(), svc, tenantID, f.IssuerUser.Email)
 
 	fmt.Println("app-smoke — full cert §5 walkthrough through internal/app (memstore-backed)")
 	fmt.Printf("Issuer: %s (NIF %s) · tenant %s\n", f.Issuer.Name, f.Issuer.NIF, tenantID)
 
-	certkit.ScenarioPrevMonth(c, prevMonthDay)
+	ScenarioPrevMonth(c, prevMonthDay)
 	clock.SetBase(clockBase) // jump from April to May
 
-	certkit.Scenario51(c, today)
-	certkit.Scenario52(c, today)
-	certkit.Scenario53(c, today)
-	certkit.Scenario54(c, today)
-	certkit.Scenario55(c, today)
-	certkit.Scenario56(c, today)
-	certkit.Scenario57(c, today)
-	certkit.Scenario58(c, today)
-	certkit.Scenario59(c, today)
-	certkit.Scenario510(c, today)
-	certkit.Scenario511(c, today)
-	certkit.Scenario512(c, today)
-	certkit.Scenario513(c, today)
+	Scenario51(c, today)
+	Scenario52(c, today)
+	Scenario53(c, today)
+	Scenario54(c, today)
+	Scenario55(c, today)
+	Scenario56(c, today)
+	Scenario57(c, today)
+	Scenario58(c, today)
+	Scenario59(c, today)
+	Scenario510(c, today)
+	Scenario511(c, today)
+	Scenario512(c, today)
+	Scenario513(c, today)
 
 	// SAF-T comes from the app's ExportService (reads the documents the services
 	// persisted in memstore) — proving the all-families export path end-to-end.
 	writeAppSAFT(svc, clockBase)
 	// PDFs + checklist are pure projections of the issued documents (the app has
-	// no multi-via PDF surface), rendered from the same values via certkit.
-	certkit.WriteDocumentPDFs(c, sw, outDir)
-	certkit.WriteChecklist(outDir)
+	// no multi-via PDF surface), rendered from the same domain values.
+	WriteDocumentPDFs(c, sw, outDir)
+	WriteChecklist(outDir)
 
 	fmt.Printf("\nDone. Issued %d sales, %d work, %d stock, %d payment documents through internal/app.\n",
 		store.SalesCount(), store.WorkCount(), store.StockCount(), store.PaymentCount())

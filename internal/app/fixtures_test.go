@@ -291,10 +291,25 @@ func paymentDraftRG(date time.Time) (domain.PaymentDraft, domain.PaymentTotals) 
 
 // ndDraft builds a debit note adjusting the price of ref's single P-NOR line
 // (quantity must match the originating line for the ND product-set invariant).
+// Uses ref.Customer so the allocation CustomerID check passes.
 func ndDraft(series domain.Series, date time.Time, ref domain.SalesInvoice) domain.DraftSalesInvoice {
 	line := testLine(date)
 	line.Quantity = ref.Lines[0].Quantity
 	line.UnitPrice = mustVal(domain.NewMoney(2.00))
 	line.References = []domain.DocReference{{Reference: ref.Number.Format(), Reason: "Acerto de preço"}}
-	return domain.DraftSalesInvoice{CommonDraftDocument: commonDraft(domain.ND, series, date, line)}
+	cd := commonDraft(domain.ND, series, date, line)
+	cd.Customer = ref.Customer // same UUID — allocation check requires it
+	return domain.DraftSalesInvoice{CommonDraftDocument: cd}
+}
+
+// ncDraft builds a credit note (NC) referencing ref. The line carries a single
+// DocReference to the originating invoice — sufficient for the live-rectifier
+// guard tests. Uses ref.Customer so the allocation CustomerID check passes.
+func ncDraft(series domain.Series, date time.Time, ref domain.SalesInvoice) domain.DraftSalesInvoice {
+	line := testLine(date)
+	line.UnitPrice = mustVal(domain.NewMoney(5.00))
+	line.References = []domain.DocReference{{Reference: ref.Number.Format(), Reason: "Rectificação"}}
+	cd := commonDraft(domain.NC, series, date, line)
+	cd.Customer = ref.Customer // same UUID — allocation check requires it
+	return domain.DraftSalesInvoice{CommonDraftDocument: cd}
 }

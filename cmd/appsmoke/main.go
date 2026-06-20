@@ -48,9 +48,6 @@ func main() {
 	// Series are registered before the earliest document (5.1, 8 May 2026).
 	seriesReg := time.Date(2026, 4, 1, 9, 0, 0, 0, loc)
 
-	// One clock drives both the scenarios and the app's SystemEntryDate stamping.
-	// Each scenario re-pins it (c.atDay) to its own business day at 09:00, so every
-	// document's SystemEntryDate lands on its document date.
 	clock := NewClock(seriesReg, time.Minute)
 
 	f := BuildFixtures(seriesReg)

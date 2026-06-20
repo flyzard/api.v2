@@ -201,15 +201,7 @@ func newInvoicingService(d Deps) *InvoicingService {
 	}
 }
 
-// IssueSalesInvoice issues one sales-family document (FT/FS/FR/NC/ND). ND is
-// allocation-bearing: it needs a reader over already-issued documents to
-// validate its line product-set against the originating invoice, which this
-// method supplies from the transaction's document repo.
-//
-// The draft is taken by value and mutated during issuance (the domain recomputes
-// totals and each line's GlobalDiscountShare, which it resets first —
-// sales_invoice.go:244 — so re-issuing on retry is idempotent; no per-attempt
-// copy is needed).
+// IssueSalesInvoice issues one sales-family document (FT/FS/FR/NC/ND).
 func (s *InvoicingService) IssueSalesInvoice(
 	ctx context.Context, tenantID string, req IssueSalesInvoiceRequest,
 ) (domain.SalesInvoice, error) {

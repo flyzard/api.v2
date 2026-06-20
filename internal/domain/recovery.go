@@ -94,10 +94,8 @@ func IntegrateRecoveredWorkDocument(draft *DraftWorkDocument, ref RecoveredRef, 
 // path. Receipts carry no Hash/HashControl in SAF-T, so there is no original
 // reference to encode — recovery materializes as SourcePayment = "M" plus the
 // recovery-series policy.
-// No IssueOptions parameter: none of the issuance options apply to receipts
-// (no signer, no calendar-gated guards), so there is nothing to pass through.
-func IntegrateRecoveredPayment(draft *PaymentDraft, series *Series, now time.Time, totals PaymentTotals) (Payment, error) {
-	return IssuePayment(draft, series, now, totals, IssueOptions{SourceBilling: SourceBillingManual})
+func IntegrateRecoveredPayment(draft *PaymentDraft, series *Series, now time.Time, totals PaymentTotals, qr QRConfig) (Payment, error) {
+	return IssuePayment(draft, series, now, totals, IssueOptions{SourceBilling: SourceBillingManual}, qr)
 }
 
 // IntegrateRecoveredSalesInvoice records a sales document emitted outside the

@@ -31,9 +31,9 @@ func BuildFixtures(now time.Time) *Fixtures {
 
 	issuerAddr := must(domain.NewAddress("Rua dos Programadores 1", "Lisboa", "1000-100", "PT"))
 	f.Issuer = must(domain.NewCompany(domain.Company{
-		NIF:        "500000000",
-		Name:       "Demo Faturação Lda.",
-		TradeName:  "Demo Faturação",
+		NIF:        "519348761",
+		Name:       "AVENIDA DO CODIGO - SOFTWARE E SOLUÇÕES DIGITAIS LDA",
+		TradeName:  "Faturly",
 		Address:    issuerAddr,
 		FiscalYear: 2026,
 		StartMonth: 1,
@@ -44,25 +44,25 @@ func BuildFixtures(now time.Time) *Fixtures {
 	f.IssuerUser = must(domain.NewUser("issuer@demo.pt", "Maria Operadora"))
 
 	f.CustWithNIF = *must(domain.NewCustomer(
-		"ACC-PT-001", "503504564", "Acme Lda.",
+		"503504564", "Acme Lda.",
 		must(domain.NewAddress("Rua das Flores 12", "Lisboa", "1000-001", "PT")),
 		false,
 	))
 
 	f.CustNoNIF1 = *must(domain.NewCustomer(
-		"ACC-PT-NONIF-1", "999999990", "Joana Silva",
+		"999999990", "Joana Silva",
 		must(domain.NewAddress("Av. da República 50", "Porto", "4000-200", "PT")),
 		false,
 	))
 
 	f.CustNoNIF2 = *must(domain.NewCustomer(
-		"ACC-PT-NONIF-2", "999999990", "Pedro Costa",
+		"999999990", "Pedro Costa",
 		must(domain.NewAddress("Rua de Santa Catarina 33", "Porto", "4000-300", "PT")),
 		false,
 	))
 
 	f.CustForeign = *must(domain.NewCustomer(
-		"ACC-US-001", "EIN-12-3456789", "Globex Corp.",
+		"EIN-12-3456789", "Globex Corp.",
 		must(domain.NewAddress("742 Evergreen Terrace", "Springfield", "12345", "US")),
 		false,
 	))

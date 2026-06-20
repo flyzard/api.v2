@@ -15,6 +15,7 @@ package main
 
 import (
 	"context"
+	"crypto/rsa"
 	"crypto/sha256"
 	"crypto/tls"
 	"encoding/base64"
@@ -34,34 +35,14 @@ func main() {
 		log.Fatalf("config: %v", err)
 	}
 
-	nif := os.Getenv("AT_NIF")
-	user := os.Getenv("AT_USERNAME")
-	pass := os.Getenv("AT_PASSWORD")
-	if nif == "" || user == "" || pass == "" {
-		log.Fatal("set AT_NIF, AT_USERNAME and AT_PASSWORD (Portal das Finanças sub-user with the WSE series permission)")
+	nif, user, pass := getEnvVars()
+
+	err, atPub := getATPublicKey()
+	if err != nil {
+		log.Fatalf("AT public key: %v", err)
 	}
 
-	keyFile := os.Getenv("AT_PUBLIC_KEY_FILE")
-	if keyFile == "" {
-		log.Fatal("set AT_PUBLIC_KEY_FILE (AT cipher certificate, e.g. certs/at-public-key.pem)")
-	}
-	pemData, err := os.ReadFile(keyFile)
-	if err != nil {
-		log.Fatalf("read %s: %v", keyFile, err)
-	}
-	atPub, err := at.ParseATPublicKey(string(pemData))
-	if err != nil {
-		log.Fatalf("parse AT public key: %v", err)
-	}
-
-	var clientCert tls.Certificate
-	certFile, certKey := os.Getenv("AT_CLIENT_CERT_FILE"), os.Getenv("AT_CLIENT_KEY_FILE")
-	if certFile != "" && certKey != "" {
-		clientCert, err = tls.LoadX509KeyPair(certFile, certKey)
-		if err != nil {
-			log.Fatalf("load client TLS pair: %v", err)
-		}
-	}
+	clientCert := getClientCert(err)
 
 	certNum := os.Getenv("AT_CERT_NUM")
 	logBodies := os.Getenv("AT_TEST_LOG_BODIES") == "1"
@@ -150,6 +131,44 @@ func main() {
 	}
 }
 
+func getClientCert(err error) tls.Certificate {
+	var clientCert tls.Certificate
+	certFile, certKey := os.Getenv("AT_CLIENT_CERT_FILE"), os.Getenv("AT_CLIENT_KEY_FILE")
+	if certFile != "" && certKey != "" {
+		clientCert, err = tls.LoadX509KeyPair(certFile, certKey)
+		if err != nil {
+			log.Fatalf("load client TLS pair: %v", err)
+		}
+	}
+	return clientCert
+}
+
+func getATPublicKey() (error, *rsa.PublicKey) {
+	keyFile := os.Getenv("AT_PUBLIC_KEY_FILE")
+	if keyFile == "" {
+		log.Fatal("set AT_PUBLIC_KEY_FILE (AT cipher certificate, e.g. certs/at-public-key.pem)")
+	}
+	pemData, err := os.ReadFile(keyFile)
+	if err != nil {
+		log.Fatalf("read %s: %v", keyFile, err)
+	}
+	atPub, err := at.ParseATPublicKey(string(pemData))
+	if err != nil {
+		log.Fatalf("parse AT public key: %v", err)
+	}
+	return err, atPub
+}
+
+func getEnvVars() (string, string, string) {
+	nif := os.Getenv("AT_NIF")
+	user := os.Getenv("AT_USERNAME")
+	pass := os.Getenv("AT_PASSWORD")
+	if nif == "" || user == "" || pass == "" {
+		log.Fatal("set AT_NIF, AT_USERNAME and AT_PASSWORD (Portal das Finanças sub-user with the WSE series permission)")
+	}
+	return nif, user, pass
+}
+
 // stubSigner produces a deterministic 172-char base64-shaped hash. With
 // AT_CERT_NUM=0 the fatcorews HashCharacters field is "0", so AT never
 // validates these signatures in the uncertified test flow.
@@ -223,7 +242,6 @@ func runDocCommSmoke(ctx context.Context, client *at.Client, now time.Time) erro
 		return fmt.Errorf("customer address: %w", err)
 	}
 	customer, err := domain.NewCustomer(
-		"SMOKE1",
 		domain.CustomerTaxID("555555550"),
 		"Cliente Smoke",
 		custAddr,

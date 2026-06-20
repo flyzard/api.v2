@@ -1,9 +1,4 @@
-// Package at implements the client side of three AT webservices: series
-// communication (SeriesWS, Portaria 195/2020: registarSerie, finalizarSerie,
-// anularSerie, consultarSeries), transport-document communication (sgdtws),
-// and real-time invoice communication (fatcorews RegisterInvoice, DL 28/2019).
-// Ported from the v1 infrastructure client; wire formats follow the official
-// WSDLs and the load-bearing quirks documented inline.
+// Package at implements the client side of three AT webservices
 package at
 
 import (
@@ -14,26 +9,17 @@ import (
 	"github.com/flyzard/invoicing.v2/internal/domain"
 )
 
-// Error is a failure reported by an AT webservice (connection, HTTP status,
-// SOAP fault, or codResultOper >= 3000).
+// Error is a failure reported by an AT webservice (connection, HTTP status, SOAP fault, or codResultOper >= 3000).
 type Error struct {
 	Code    string
 	Message string
-	// Ambiguous marks a deterministic AT rejection received after a transient
-	// failure on the same operation. The earlier attempt may have been
-	// committed by AT with its response lost, so this rejection may actually
-	// be a duplicate-refusal of a success. Callers must reconcile against AT
-	// (or a human must) before treating it as a definitive failure.
+	// Ambiguous marks a deterministic AT rejection received after a transient failure on the same operation.
 	Ambiguous bool
 }
 
 func (e Error) Error() string { return fmt.Sprintf("AT error %s: %s", e.Code, e.Message) }
 
-// IsRetryable reports whether the error might succeed on retry. The set is
-// exactly what the client produces for transient failures: "CONNECTION"
-// (sendSOAPRequest wraps every transport-level error, including timeouts) and
-// gateway statuses 502/503/504. AT operation codes (3xxx+) are deterministic
-// business errors — never retried.
+// IsRetryable reports whether the error might succeed on retry.
 func (e Error) IsRetryable() bool {
 	switch e.Code {
 	case "CONNECTION", "HTTP_502", "HTTP_503", "HTTP_504":
@@ -42,8 +28,7 @@ func (e Error) IsRetryable() bool {
 	return false
 }
 
-// SeriesClient is the port for the AT SeriesWS operations. Client (SOAP)
-// and NullClient (in-memory fake) implement it.
+// SeriesClient is the port for the AT SeriesWS operations.
 type SeriesClient interface {
 	RegisterSeries(ctx context.Context, req SeriesRegistration) (*SeriesRegistrationResult, error)
 	FinalizeSeries(ctx context.Context, req SeriesFinalization) error
@@ -61,8 +46,7 @@ type InvoiceClient interface {
 	CommunicateInvoice(ctx context.Context, company domain.Company, inv domain.SalesInvoice) (*InvoiceResult, error)
 }
 
-// CancelReasonError is the anularSerie motivo code "Anulação por erro de
-// registo" — the only code defined by the AT manual "Comunicação de Séries
+// CancelReasonError is the anularSerie motivo code "Anulação por erro de registo" — the only code defined by the AT manual "Comunicação de Séries
 // Documentais, Aspetos Específicos" §1.3.10.
 const CancelReasonError = "ER"
 
@@ -84,8 +68,7 @@ type SeriesFinalization struct {
 	Justification string // optional, max 4000 chars
 }
 
-// SeriesCancellation carries the anularSerie inputs. AT only accepts it for
-// a series that never issued a document.
+// SeriesCancellation carries the anularSerie inputs. AT only accepts it for a series that never issued a document.
 type SeriesCancellation struct {
 	SeriesID string
 	DocType  domain.DocumentType
@@ -110,10 +93,7 @@ type SeriesStatus struct {
 	RegistrationDate time.Time // consultarSeries dataRegisto
 }
 
-// RegistrationFor derives the registarSerie request from a series that has
-// not yet been registered. tipoSerie follows ProcessingMeans: "N" Normal or
-// "R" Recuperação per the AT manual "Comunicação de Séries Documentais,
-// Aspetos Específicos" §1.3.6 (Portaria 363/2010 recovery integration).
+// RegistrationFor derives the registarSerie request from a series that has not yet been registered.
 func RegistrationFor(s domain.Series, startDate time.Time) (SeriesRegistration, error) {
 	if s.IsRegistered() {
 		return SeriesRegistration{}, fmt.Errorf("series %q is already registered (code %s)", s.ID, s.ATCode)
@@ -132,8 +112,6 @@ func RegistrationFor(s domain.Series, startDate time.Time) (SeriesRegistration, 
 }
 
 // FinalizationFor derives the finalizarSerie request from a registered series.
-// A series that never issued cannot be finalized (WSDL seqUltimoDocEmitido
-// requires >= 1) — cancel it instead (CancellationFor).
 func FinalizationFor(s domain.Series, justification string) (SeriesFinalization, error) {
 	if !s.IsRegistered() {
 		return SeriesFinalization{}, fmt.Errorf("series %q is not registered", s.ID)
@@ -150,8 +128,7 @@ func FinalizationFor(s domain.Series, justification string) (SeriesFinalization,
 	}, nil
 }
 
-// CancellationFor derives the anularSerie request from a registered series
-// that never issued a document.
+// CancellationFor derives the anularSerie request from a registered series that never issued a document.
 func CancellationFor(s domain.Series) (SeriesCancellation, error) {
 	if !s.IsRegistered() {
 		return SeriesCancellation{}, fmt.Errorf("series %q is not registered", s.ID)

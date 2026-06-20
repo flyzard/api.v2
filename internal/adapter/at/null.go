@@ -10,14 +10,11 @@ import (
 	"github.com/flyzard/invoicing.v2/internal/domain"
 )
 
-// NullClient is an in-memory SeriesWS fake for dev/demo/tests. Validation
-// codes are deterministic SHA-256 derivations — never used in production,
-// where Client obtains real codes from AT.
+// NullClient is an in-memory SeriesWS fake for dev/demo/tests.
 type NullClient struct {
 	mu     sync.Mutex
 	series map[nullKey]*nullSeries
-	// Now overrides the wall clock for deterministic tests. Nil = time.Now.
-	Now func() time.Time
+	Now    func() time.Time
 }
 
 type nullKey struct {
@@ -79,8 +76,7 @@ func (c *NullClient) deriveUniqueCode(key nullKey) string {
 	return deriveCodeFromKey(base)
 }
 
-// RegisterSeries simulates registarSerie. Repeat calls with the same
-// (DocType, SeriesID) return the same code.
+// RegisterSeries simulates registarSerie. Repeat calls with the same (DocType, SeriesID) return the same code.
 func (c *NullClient) RegisterSeries(_ context.Context, req SeriesRegistration) (*SeriesRegistrationResult, error) {
 	if !req.DocType.IsValid() {
 		return nil, fmt.Errorf("null AT client: unsupported doc type %q", req.DocType)
@@ -167,14 +163,12 @@ func (c *NullClient) GetSeriesStatus(_ context.Context, seriesID string, docType
 	}, nil
 }
 
-// CommunicateTransport simulates sgdtws: deterministic fake ATDocCodeID
-// derived from the document number.
+// CommunicateTransport simulates sgdtws: deterministic fake ATDocCodeID derived from the document number.
 func (c *NullClient) CommunicateTransport(_ context.Context, _ domain.Company, mv domain.StockMovement) (*TransportResult, error) {
 	if !mv.DocumentType.IsTransport() {
 		return nil, fmt.Errorf("null AT client: %s is not a transport document", mv.Number.Format())
 	}
-	// Mirror sgdtws: a cancellation voids an already-communicated document and
-	// gets no new ATDocCodeID (see Client.CommunicateTransport).
+	// Mirror sgdtws: a cancellation voids an already-communicated document and gets no new ATDocCodeID (see Client.CommunicateTransport).
 	if mv.Status == domain.StatusCancelled {
 		return &TransportResult{
 			DocumentNumber: mv.Number.Format(),
@@ -195,7 +189,7 @@ func (c *NullClient) CommunicateInvoice(_ context.Context, _ domain.Company, inv
 	if !inv.DocumentType.IsSales() {
 		return nil, fmt.Errorf("null AT client: %s is not a sales document", inv.Number.Format())
 	}
-	return &InvoiceResult{Code: 0, Message: "Documento registado com sucesso.", OperationDate: c.now()}, nil
+	return &InvoiceResult{Message: "Documento registado com sucesso.", OperationDate: c.now()}, nil
 }
 
 // Compile-time interface checks.

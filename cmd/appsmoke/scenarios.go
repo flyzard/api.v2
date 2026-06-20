@@ -410,15 +410,22 @@ func (c *Ctx) scenario513Working(dt domain.DocumentType, title string, today tim
 
 func (c *Ctx) scenario513RC(today time.Time) {
 	fmt.Println("\n--- 5.13 · Recibo (RC) liquida a fatura 5.6 ---")
-	line := domain.PaymentLine{
-		LineNumber: 1,
-		SourceDocuments: []domain.SourceDocumentID{{
-			OriginatingON: doc56.Number.Format(),
-			InvoiceDate:   doc56.Date,
-			Description:   "Liquidação integral",
-		}},
-		Movement: domain.CreditAmount{Value: doc56.Totals.GrossTotal},
-		Tax:      taxNOR(),
+	// One settlement line per VAT-rate bucket of invoice 5.6, so the line-derived
+	// VAT (and thus the QR I/J/K blocks and the SAF-T Payment lines) reconciles
+	// with TaxPayable. Collapsing the whole gross onto a single NOR line would make
+	// the line's implied VAT contradict field N — rejected by IssuePayment's RC guard.
+	lines := make([]domain.PaymentLine, 0, len(doc56.Totals.Breakdown))
+	for i, e := range doc56.Totals.Breakdown {
+		lines = append(lines, domain.PaymentLine{
+			LineNumber: i + 1,
+			SourceDocuments: []domain.SourceDocumentID{{
+				OriginatingON: doc56.Number.Format(),
+				InvoiceDate:   doc56.Date,
+				Description:   "Liquidação integral",
+			}},
+			Movement: domain.CreditAmount{Value: e.Base + e.Tax},
+			Tax:      must(domain.NewVATLineTax(e.Region, e.Category, e.ExemptionCode, e.ExemptionDescription)),
+		})
 	}
 	draft := &domain.PaymentDraft{
 		Type:            domain.RC,
@@ -430,7 +437,7 @@ func (c *Ctx) scenario513RC(today time.Time) {
 			Amount:    doc56.Totals.GrossTotal,
 			Date:      today,
 		}},
-		Lines: []domain.PaymentLine{line},
+		Lines: lines,
 	}
 	totals := domain.PaymentTotals{
 		NetTotal:   doc56.Totals.NetTotal,

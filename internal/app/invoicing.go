@@ -142,6 +142,41 @@ type IssuePaymentRequest struct {
 	Idem     IdempotencyKey
 }
 
+// IntegrateRecoveredSalesInvoiceRequest mirrors IssueSalesInvoiceRequest with an
+// additional RecoveredRef that identifies the original document (Portaria 363/2010).
+type IntegrateRecoveredSalesInvoiceRequest struct {
+	Draft        domain.DraftSalesInvoice
+	SeriesID     string
+	SourceID     string
+	RecoveredRef domain.RecoveredRef
+	Idem         IdempotencyKey
+}
+
+type IntegrateRecoveredWorkDocumentRequest struct {
+	Draft        domain.DraftWorkDocument
+	SeriesID     string
+	SourceID     string
+	RecoveredRef domain.RecoveredRef
+	Idem         IdempotencyKey
+}
+
+type IntegrateRecoveredStockMovementRequest struct {
+	Draft        domain.DraftStockMovement
+	SeriesID     string
+	SourceID     string
+	RecoveredRef domain.RecoveredRef
+	Idem         IdempotencyKey
+}
+
+// IntegrateRecoveredPaymentRequest omits SourceID/RecoveredRef because receipts
+// carry no Hash/HashControl in SAF-T; recovery materialises as SourcePayment="M".
+type IntegrateRecoveredPaymentRequest struct {
+	Draft    domain.PaymentDraft
+	SeriesID string
+	Totals   domain.PaymentTotals
+	Idem     IdempotencyKey
+}
+
 // InvoicingService issues documents through the domain, persisting the document
 // and the advanced series in a single transaction.
 type InvoicingService struct {
@@ -188,7 +223,7 @@ func (s *InvoicingService) IssueSalesInvoice(
 		unlock := s.sourceLocks.lockMany(tenantID, sources)
 		defer unlock()
 	}
-	return chainIssue[domain.SalesInvoice](s, ctx, tenantID, seriesID, draft.DocumentType, idem,
+	return chainIssue(s, ctx, tenantID, seriesID, draft.DocumentType, idem,
 		func(tx RepoSet, n domain.DocNumber) (domain.SalesInvoice, error) {
 			return tx.Documents().GetSalesInvoice(n)
 		},
@@ -237,7 +272,7 @@ func (s *InvoicingService) IssueWorkDocument(
 	ctx context.Context, tenantID string, req IssueWorkDocumentRequest,
 ) (domain.WorkDocument, error) {
 	draft, seriesID, sourceID, idem := req.Draft, req.SeriesID, req.SourceID, req.Idem
-	return chainIssue[domain.WorkDocument](s, ctx, tenantID, seriesID, draft.DocumentType, idem,
+	return chainIssue(s, ctx, tenantID, seriesID, draft.DocumentType, idem,
 		func(tx RepoSet, n domain.DocNumber) (domain.WorkDocument, error) {
 			return tx.Documents().GetWorkDocument(n)
 		},
@@ -252,13 +287,14 @@ func (s *InvoicingService) IssueWorkDocument(
 }
 
 // IssueStockMovement issues one stock-movement / transport document
-// (GR/GT/GA/GC/GD). Signed and hash-chained like a sales invoice. AT transport
-// communication is handled by a later plan, so issuance enqueues nothing here.
+// (GR/GT/GA/GC/GD). Signed and hash-chained like a sales invoice. When the
+// tenant elects transport communication (CommTransport), issuance enqueues a
+// KindTransportComm outbox task (DL 147/2003 sgdtws) in the same transaction.
 func (s *InvoicingService) IssueStockMovement(
 	ctx context.Context, tenantID string, req IssueStockMovementRequest,
 ) (domain.StockMovement, error) {
 	draft, seriesID, sourceID, idem := req.Draft, req.SeriesID, req.SourceID, req.Idem
-	return chainIssue[domain.StockMovement](s, ctx, tenantID, seriesID, draft.DocumentType, idem,
+	return chainIssue(s, ctx, tenantID, seriesID, draft.DocumentType, idem,
 		func(tx RepoSet, n domain.DocNumber) (domain.StockMovement, error) {
 			return tx.Documents().GetStockMovement(n)
 		},
@@ -268,7 +304,15 @@ func (s *InvoicingService) IssueStockMovement(
 		},
 		func(d domain.StockMovement) domain.DocNumber { return d.Number },
 		func(tx RepoSet, d domain.StockMovement) error { return tx.Documents().SaveStockMovement(d) },
-		nil,
+		func(tx RepoSet, tenant Tenant, d domain.StockMovement) error {
+			if !tenant.CommTransport {
+				return nil
+			}
+			if eerr := tx.Outbox().Enqueue(Task{TenantID: tenantID, Kind: KindTransportComm, Number: d.Number}); eerr != nil {
+				return newError(KindInternal, fmt.Errorf("enqueue transport comm: %w", eerr))
+			}
+			return nil
+		},
 	)
 }
 
@@ -290,7 +334,7 @@ func (s *InvoicingService) IssuePayment(
 		unlock := s.sourceLocks.lockMany(tenantID, sources)
 		defer unlock()
 	}
-	return chainIssue[domain.Payment](s, ctx, tenantID, seriesID, draft.Type, idem,
+	return chainIssue(s, ctx, tenantID, seriesID, draft.Type, idem,
 		func(tx RepoSet, n domain.DocNumber) (domain.Payment, error) { return tx.Documents().GetPayment(n) },
 		func(tx RepoSet, tenant Tenant, series *domain.Series) (domain.Payment, error) {
 			// Build allocation claims from payment lines before issuing — a rejection
@@ -302,7 +346,127 @@ func (s *InvoicingService) IssuePayment(
 			if verr := s.validatePaymentAllocations(tx, &draft, claims, policy); verr != nil {
 				return domain.Payment{}, verr
 			}
-			return domain.IssuePayment(&draft, series, s.clock.Now(), totals, issueOptions(tenant))
+			return domain.IssuePayment(&draft, series, s.clock.Now(), totals, issueOptions(tenant), qrFor(tenant, s.software))
+		},
+		func(d domain.Payment) domain.DocNumber { return d.Number },
+		func(tx RepoSet, d domain.Payment) error { return tx.Documents().SavePayment(d) },
+		nil,
+	)
+}
+
+// IntegrateRecoveredSalesInvoice is the recovery twin of IssueSalesInvoice.
+// It routes through the same chainIssue spine (per-series lock, idempotent replay,
+// optimistic retry, transactional save+outbox+idempotency) changing only the domain
+// call to domain.IntegrateRecoveredSalesInvoice which forces SourceBilling="M" and
+// encodes ref into the HashControl. The series must be a recovery series; the domain
+// enforces this (ErrNotRecoverySeries / ErrRecoverySeriesMisuse → KindInvalid).
+func (s *InvoicingService) IntegrateRecoveredSalesInvoice(
+	ctx context.Context, tenantID string, req IntegrateRecoveredSalesInvoiceRequest,
+) (domain.SalesInvoice, error) {
+	draft, seriesID, sourceID, ref, idem := req.Draft, req.SeriesID, req.SourceID, req.RecoveredRef, req.Idem
+	if dt := draft.DocumentType; dt == domain.NC || dt == domain.ND {
+		sources := parseableSourceNums(draft.Lines)
+		unlock := s.sourceLocks.lockMany(tenantID, sources)
+		defer unlock()
+	}
+	return chainIssue(s, ctx, tenantID, seriesID, draft.DocumentType, idem,
+		func(tx RepoSet, n domain.DocNumber) (domain.SalesInvoice, error) {
+			return tx.Documents().GetSalesInvoice(n)
+		},
+		func(tx RepoSet, tenant Tenant, series *domain.Series) (domain.SalesInvoice, error) {
+			draft.Series = *series
+			opts := issueOptions(tenant)
+			dt := draft.DocumentType
+			if dt == domain.ND {
+				opts.Reader = docReader{tx.Documents()}
+			}
+			if dt == domain.NC || dt == domain.ND {
+				claims := allocationClaimsSales(draft.Lines)
+				policy := domain.AllocationPolicy{
+					AllowUnknownSource: tenant.AllowUnknownAllocSource,
+					SkipSourceCeiling:  dt == domain.ND || (dt == domain.NC && tenant.AllowRappelNC),
+				}
+				if verr := s.validateSalesAllocations(tx, &draft, claims, policy, AllocCredit); verr != nil {
+					return domain.SalesInvoice{}, verr
+				}
+			}
+			return domain.IntegrateRecoveredSalesInvoice(&draft, ref, series, s.signer, sourceID, s.clock.Now(), opts, qrFor(tenant, s.software))
+		},
+		func(d domain.SalesInvoice) domain.DocNumber { return d.Number },
+		func(tx RepoSet, d domain.SalesInvoice) error { return tx.Documents().SaveSalesInvoice(d) },
+		func(tx RepoSet, tenant Tenant, d domain.SalesInvoice) error {
+			if tenant.CommMode != CommRealtime {
+				return nil
+			}
+			if eerr := tx.Outbox().Enqueue(Task{TenantID: tenantID, Kind: KindInvoiceComm, Number: d.Number}); eerr != nil {
+				return newError(KindInternal, fmt.Errorf("enqueue comm: %w", eerr))
+			}
+			return nil
+		},
+	)
+}
+
+// IntegrateRecoveredWorkDocument is the recovery twin of IssueWorkDocument.
+func (s *InvoicingService) IntegrateRecoveredWorkDocument(
+	ctx context.Context, tenantID string, req IntegrateRecoveredWorkDocumentRequest,
+) (domain.WorkDocument, error) {
+	draft, seriesID, sourceID, ref, idem := req.Draft, req.SeriesID, req.SourceID, req.RecoveredRef, req.Idem
+	return chainIssue(s, ctx, tenantID, seriesID, draft.DocumentType, idem,
+		func(tx RepoSet, n domain.DocNumber) (domain.WorkDocument, error) {
+			return tx.Documents().GetWorkDocument(n)
+		},
+		func(tx RepoSet, tenant Tenant, series *domain.Series) (domain.WorkDocument, error) {
+			draft.Series = *series
+			return domain.IntegrateRecoveredWorkDocument(&draft, ref, series, s.signer, sourceID, s.clock.Now(), issueOptions(tenant), qrFor(tenant, s.software))
+		},
+		func(d domain.WorkDocument) domain.DocNumber { return d.Number },
+		func(tx RepoSet, d domain.WorkDocument) error { return tx.Documents().SaveWorkDocument(d) },
+		nil,
+	)
+}
+
+// IntegrateRecoveredStockMovement is the recovery twin of IssueStockMovement.
+func (s *InvoicingService) IntegrateRecoveredStockMovement(
+	ctx context.Context, tenantID string, req IntegrateRecoveredStockMovementRequest,
+) (domain.StockMovement, error) {
+	draft, seriesID, sourceID, ref, idem := req.Draft, req.SeriesID, req.SourceID, req.RecoveredRef, req.Idem
+	return chainIssue(s, ctx, tenantID, seriesID, draft.DocumentType, idem,
+		func(tx RepoSet, n domain.DocNumber) (domain.StockMovement, error) {
+			return tx.Documents().GetStockMovement(n)
+		},
+		func(tx RepoSet, tenant Tenant, series *domain.Series) (domain.StockMovement, error) {
+			draft.Series = *series
+			return domain.IntegrateRecoveredStockMovement(&draft, ref, series, s.signer, sourceID, s.clock.Now(), issueOptions(tenant), qrFor(tenant, s.software))
+		},
+		func(d domain.StockMovement) domain.DocNumber { return d.Number },
+		func(tx RepoSet, d domain.StockMovement) error { return tx.Documents().SaveStockMovement(d) },
+		nil,
+	)
+}
+
+// IntegrateRecoveredPayment is the recovery twin of IssuePayment.
+// Receipts carry no Hash/HashControl; recovery materialises as SourcePayment="M".
+// There is no SourceID or RecoveredRef on the request — parallel to IssuePayment.
+func (s *InvoicingService) IntegrateRecoveredPayment(
+	ctx context.Context, tenantID string, req IntegrateRecoveredPaymentRequest,
+) (domain.Payment, error) {
+	draft, seriesID, totals, idem := req.Draft, req.SeriesID, req.Totals, req.Idem
+	{
+		sources := parseablePaymentSourceNums(draft.Lines)
+		unlock := s.sourceLocks.lockMany(tenantID, sources)
+		defer unlock()
+	}
+	return chainIssue(s, ctx, tenantID, seriesID, draft.Type, idem,
+		func(tx RepoSet, n domain.DocNumber) (domain.Payment, error) { return tx.Documents().GetPayment(n) },
+		func(tx RepoSet, tenant Tenant, series *domain.Series) (domain.Payment, error) {
+			claims := allocationClaimsPayment(draft.Lines)
+			policy := domain.AllocationPolicy{
+				AllowUnknownSource: true, // pre-system invoices are common; receipt ceiling is HARD
+			}
+			if verr := s.validatePaymentAllocations(tx, &draft, claims, policy); verr != nil {
+				return domain.Payment{}, verr
+			}
+			return domain.IntegrateRecoveredPayment(&draft, series, s.clock.Now(), totals, qrFor(tenant, s.software))
 		},
 		func(d domain.Payment) domain.DocNumber { return d.Number },
 		func(tx RepoSet, d domain.Payment) error { return tx.Documents().SavePayment(d) },

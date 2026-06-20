@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"slices"
 	"time"
-
-	"github.com/google/uuid"
 )
 
 // PaymentMechanism is the SAF-T PaymentMechanism enum (means of payment).
@@ -244,6 +242,9 @@ type Payment struct {
 	PaymentTotals
 	Currency       *Currency        `json:"currency,omitempty"`
 	WithholdingTax []WithholdingTax `json:"withholding_tax,omitempty"`
+	// QRPayload is the Portaria 195/2020 QR string (AT C1 ruling: Q omitted, R present).
+	// Frozen at issuance by buildPaymentQRPayload; never recomputed after Cancel.
+	QRPayload string `json:"qr_payload,omitempty"`
 }
 
 // PaymentDraft is the pre-issue payment carrying all the business data;
@@ -269,11 +270,8 @@ func (d *PaymentDraft) Validate() error {
 	if d.TransactionDate.IsZero() {
 		return fmt.Errorf("transaction_date is required")
 	}
-	if d.Customer.CustomerID == uuid.Nil {
-		return ErrMissingCustomer
-	}
-	if err := d.Customer.Validate(); err != nil {
-		return fmt.Errorf("customer: %w", err)
+	if err := validateCustomerPresence(d.Customer); err != nil {
+		return err
 	}
 	if d.SourceID == "" {
 		return fmt.Errorf("source_id is required")
@@ -326,7 +324,7 @@ type PaymentTotals struct {
 // IssuePayment advances the series counter and produces an immutable Payment.
 //
 // CONCURRENCY: same rules as Issue — caller must serialize per Series.ID and run inside a transaction.
-func IssuePayment(draft *PaymentDraft, series *Series, now time.Time, totals PaymentTotals, opts IssueOptions) (Payment, error) {
+func IssuePayment(draft *PaymentDraft, series *Series, now time.Time, totals PaymentTotals, opts IssueOptions, qr QRConfig) (Payment, error) {
 	if err := draft.Validate(); err != nil {
 		return Payment{}, fmt.Errorf("draft: %w", err)
 	}
@@ -346,11 +344,8 @@ func IssuePayment(draft *PaymentDraft, series *Series, now time.Time, totals Pay
 	recovering := sourcePayment == SourceBillingManual
 	txDate := draft.TransactionDate.In(lisbonLocation)
 	sysEntry := now.In(lisbonLocation)
-	// Rate date normalized to Lisbon like txDate — see the matching guard in
-	// IssueSalesInvoice for why mixed locations break dateOnly comparison.
-	if draft.Currency != nil && !dateOnly(draft.Currency.Date.In(lisbonLocation)).Equal(dateOnly(txDate)) {
-		return Payment{}, fmt.Errorf("currency rate date %s does not match transaction date %s",
-			draft.Currency.Date.Format("2006-01-02"), txDate.Format("2006-01-02"))
+	if err := validateCurrencyRateDate(draft.Currency, txDate, "transaction date"); err != nil {
+		return Payment{}, err
 	}
 	// PaymentDraft.Validate guarantees draft.Type is RC or RG; validateIssueContext
 	// then enforces series.DocType == draft.Type, which implies series is a receipt.
@@ -362,6 +357,31 @@ func IssuePayment(draft *PaymentDraft, series *Series, now time.Time, totals Pay
 	}
 	if totals.GrossTotal < 0 || totals.NetTotal < 0 || totals.TaxPayable < 0 {
 		return Payment{}, fmt.Errorf("totals must be non-negative")
+	}
+	// RC coherence guard: an RC carries per-line VAT (every line has Tax) that the
+	// QR's I/J/K blocks and the SAF-T Payment lines both derive from. If the
+	// line-implied VAT contradicts the caller-supplied TaxPayable (field N), the QR
+	// and SAF-T would publish mutually inconsistent figures. Reject before
+	// nextDocIdentity/AppendIssue so a rejected receipt consumes no sequence number
+	// and does not advance the series (same discipline as the currency guard in
+	// IssueSalesInvoice). RG is skipped: its lines carry no Tax, so its TaxPayable
+	// comes from the aggregate with no per-line VAT to reconcile.
+	if draft.Type == RC {
+		lineVAT := paymentLinesVAT(draft.Lines)
+		// Tolerance absorbs per-line grossToBase rounding (each line rounds to the
+		// cent independently, so worst-case drift is ~½ cent per line). Money scale
+		// is 100_000 → 1 cent = 1_000 internal units. Allow max(2 cents, 1 cent ×
+		// number of VAT lines); the real defect this guards against is off by €4.56,
+		// far beyond any rounding slack.
+		const cent Money = centScale // 1_000 internal units
+		tolerance := 2 * cent
+		if perLine := Money(len(draft.Lines)) * cent; perLine > tolerance {
+			tolerance = perLine
+		}
+		if diff := lineVAT - totals.TaxPayable; diff < -tolerance || diff > tolerance {
+			return Payment{}, fmt.Errorf("RC line-derived VAT %s does not reconcile with TaxPayable %s (diff %s)",
+				lineVAT.Format2DP(), totals.TaxPayable.Format2DP(), diff.Format2DP())
+		}
 	}
 
 	number, atcud, err := nextDocIdentity(series, draft.Type)
@@ -391,6 +411,11 @@ func IssuePayment(draft *PaymentDraft, series *Series, now time.Time, totals Pay
 	}
 
 	series.AppendIssue(number.Seq, "", txDate, sysEntry)
+
+	// QRPayload is built after AppendIssue because ATCUD and Number are assigned
+	// by nextDocIdentity above, but we use them here via p.ATCUD and p.Number.
+	// Frozen at issuance; never recomputed (AT C1 ruling, F-QR-3 invariant).
+	p.QRPayload = buildPaymentQRPayload(&p, qr)
 
 	return p, nil
 }

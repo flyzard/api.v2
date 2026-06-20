@@ -13,7 +13,6 @@ type CustomerTaxID string
 
 const (
 	MaxLenCustomerTaxID = 30
-	MaxLenAccountID     = 30
 )
 
 // validateCustomerTaxIDShape trims and enforces non-empty + ≤MaxLenCustomerTaxID.
@@ -59,7 +58,6 @@ func ValidateCustomerTaxID(id CustomerTaxID, country Country) error {
 
 type Customer struct {
 	CustomerID           uuid.UUID     `json:"customer_id"`
-	AccountID            string        `json:"account_id"`
 	CustomerTaxID        CustomerTaxID `json:"customer_tax_id"`
 	CompanyName          string        `json:"company_name"`
 	SelfBillingIndicator bool          `json:"self_billing_indicator"`
@@ -83,7 +81,6 @@ const FinalConsumerNIF CustomerTaxID = "999999990"
 func NewAnonymousCustomer() Customer {
 	return Customer{
 		CustomerID:    AnonymousCustomerID,
-		AccountID:     "ConsumidorFinal",
 		CustomerTaxID: FinalConsumerNIF,
 		CompanyName:   "Consumidor final",
 	}
@@ -97,17 +94,11 @@ func (c Customer) IsAnonymous() bool {
 // Validate is the single gate for both NewCustomer and JSON ingest.
 // CustomerID presence is enforced at document level, not here.
 func (c Customer) Validate() error {
-	if c.AccountID == "" {
-		return ErrMissingAccountID
-	}
-	if len(c.AccountID) > MaxLenAccountID || strings.ContainsRune(c.AccountID, '^') {
-		return fmt.Errorf("invalid account id: %q", c.AccountID)
-	}
 	if c.CompanyName == "" {
 		return ErrMissingCompanyName
 	}
 	// Anonymous ("Consumidor final") skips address + PT-checksum; everything
-	// past this branch (structural NIF, AccountID rules) still applies.
+	// past this branch (structural NIF rules) still applies.
 	if c.IsAnonymous() {
 		if err := ValidateCustomerTaxID(c.CustomerTaxID, ""); err != nil {
 			return err
@@ -132,10 +123,9 @@ func (c *Customer) UnmarshalJSON(data []byte) error {
 	return c.Validate()
 }
 
-func NewCustomer(accountID string, taxID CustomerTaxID, companyName string, billing Address, selfBilling bool) (*Customer, error) {
+func NewCustomer(taxID CustomerTaxID, companyName string, billing Address, selfBilling bool) (*Customer, error) {
 	c := Customer{
 		CustomerID:           uuid.New(),
-		AccountID:            accountID,
 		CustomerTaxID:        taxID,
 		CompanyName:          companyName,
 		BillingAddress:       billing,

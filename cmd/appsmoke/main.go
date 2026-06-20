@@ -9,8 +9,6 @@ package main
 
 import (
 	"context"
-	"crypto/sha512"
-	"encoding/base64"
 	"fmt"
 	"log"
 	"os"
@@ -18,6 +16,7 @@ import (
 	"time"
 
 	"github.com/flyzard/invoicing.v2/internal/adapter/memstore"
+	"github.com/flyzard/invoicing.v2/internal/adapter/signing"
 	"github.com/flyzard/invoicing.v2/internal/app"
 	"github.com/flyzard/invoicing.v2/internal/config"
 )
@@ -27,14 +26,18 @@ const (
 	outDir   = "out-appsmoke"
 )
 
-// stubSigner is the deterministic non-RSA signer the app tests use — enough to
-// drive the hash chain. A smoke does not need real Portaria 363 signatures.
-type stubSigner struct{}
-
-func (stubSigner) Sign(canonical string) (string, string, error) {
-	a := sha512.Sum512([]byte(canonical))
-	b := sha512.Sum512(a[:])
-	return base64.StdEncoding.EncodeToString(append(a[:], b[:]...)), "1", nil
+// loadSigner builds the real Portaria 363/2010 RSA-SHA1 signer from the
+// producer private key at AT_SIGNING_KEY_FILE (the same key cmd/atsmoke uses).
+func loadSigner() (*signing.RSASigner, error) {
+	path := os.Getenv("AT_SIGNING_KEY_FILE")
+	if path == "" {
+		return nil, fmt.Errorf("set AT_SIGNING_KEY_FILE (producer signing key, e.g. at_private.pem)")
+	}
+	pemBytes, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("read %s: %w", path, err)
+	}
+	return signing.NewRSASigner(pemBytes, 1)
 }
 
 type mapTenantStore struct{ tenants map[string]app.Tenant }
@@ -45,16 +48,6 @@ func (s mapTenantStore) Resolve(_ context.Context, id string) (app.Tenant, error
 		return app.Tenant{}, app.ErrNotFound
 	}
 	return t, nil
-}
-
-func smokeSoftware() config.SoftwareIdentity {
-	return config.SoftwareIdentity{
-		ProducerTaxID:     "500000000",
-		SoftwareName:      "DemoInvoicer",
-		ProducerName:      "Demo Lda.",
-		Version:           "1.0",
-		CertificateNumber: "9999",
-	}
 }
 
 func main() {
@@ -69,9 +62,15 @@ func main() {
 	clock := NewClock(prevMonthClock, time.Minute)
 
 	f := BuildFixtures(prevMonthClock)
-	sw := smokeSoftware()
-	if err := sw.Validate(); err != nil {
-		log.Fatalf("invalid software identity: %v", err)
+	cfg, err := config.Load(".env")
+	if err != nil {
+		log.Fatalf("config: %v", err)
+	}
+	sw := cfg.Software
+
+	signer, err := loadSigner()
+	if err != nil {
+		log.Fatalf("signer: %v", err)
 	}
 
 	// App stack backed by memstore. Series are seeded already AT-registered,
@@ -89,7 +88,7 @@ func main() {
 		Tenants:  mapTenantStore{tenants: map[string]app.Tenant{tenantID: tenant}},
 		UoW:      store,
 		Clock:    clock,
-		Signer:   stubSigner{},
+		Signer:   signer,
 		Software: sw,
 	})
 

@@ -12,11 +12,14 @@ import (
 )
 
 // buildPayment assembles the maroto document for RC/RG receipts.
-// Receipts carry no Hash and no QRPayload (domain decision — see spec):
-// no QR block, so the footer is the ATCUD's only home and always prints it.
-func buildPayment(p domain.Payment, m Meta) (core.Maroto, error) {
+// Receipts carry no Hash but do carry a QRPayload (AT C1 ruling); the QR block
+// is appended as the last content rows. footerATCUD: see legalFooterRows.
+func buildPayment(p domain.Payment, m Meta, footerATCUD bool) (core.Maroto, error) {
+	if p.QRPayload == "" {
+		return nil, ErrMissingQRPayload
+	}
 	id := docIdentity{Type: p.Type, Number: p.Number, Date: p.TransactionDate}
-	eng, err := newDocEngine(m, id, p.Customer, p.ATCUD, "", true, p.Status == domain.StatusCancelled)
+	eng, err := newDocEngine(m, id, p.Customer, p.ATCUD, "", footerATCUD, p.Status == domain.StatusCancelled)
 	if err != nil {
 		return nil, err
 	}
@@ -32,6 +35,11 @@ func buildPayment(p domain.Payment, m Meta) (core.Maroto, error) {
 	}
 	eng.AddRows(summaryAndTotalsRows(nil, nil, paymentTotals(p))...)
 	eng.AddRows(currencyRows(p.Currency)...)
+	qr, err := qrRows(p.ATCUD, p.QRPayload)
+	if err != nil {
+		return nil, err
+	}
+	eng.AddRows(qr...)
 	return eng, nil
 }
 
@@ -86,5 +94,7 @@ func paymentTotals(p domain.Payment) []totalEntry {
 
 // RenderPayment renders an issued RC/RG receipt as PDF bytes.
 func RenderPayment(p domain.Payment, m Meta) ([]byte, error) {
-	return render(buildPayment(p, m))
+	return renderAdaptive(func(footerATCUD bool) (core.Maroto, error) {
+		return buildPayment(p, m, footerATCUD)
+	})
 }

@@ -197,20 +197,6 @@ func (n NotSubjectTax) MarshalJSON() ([]byte, error) {
 	}{lineTaxKindNS, n.Jurisdiction, n.Reason, n.ReasonText})
 }
 
-// decodeLineTax unmarshals into a concrete variant T and runs its Validate; the
-// caller selects T via the discriminator. Generic so each new variant adds one
-// case in unmarshalLineTax instead of a 5-line block.
-func decodeLineTax[T LineTax](data []byte) (LineTax, error) {
-	var t T
-	if err := json.Unmarshal(data, &t); err != nil {
-		return nil, err
-	}
-	if err := t.Validate(); err != nil {
-		return nil, err
-	}
-	return t, nil
-}
-
 // unmarshalLineTax picks the concrete variant from the type discriminator.
 // Empty / null / missing payload returns (nil, nil); the parent decides whether nil is legal.
 func unmarshalLineTax(data []byte) (LineTax, error) {
@@ -227,11 +213,11 @@ func unmarshalLineTax(data []byte) (LineTax, error) {
 	case "":
 		return nil, nil
 	case lineTaxKindVAT:
-		return decodeLineTax[VATTax](data)
+		return decodeValidated[VATTax](data)
 	case lineTaxKindStamp:
-		return decodeLineTax[StampTax](data)
+		return decodeValidated[StampTax](data)
 	case lineTaxKindNS:
-		return decodeLineTax[NotSubjectTax](data)
+		return decodeValidated[NotSubjectTax](data)
 	default:
 		return nil, fmt.Errorf("invalid tax type: %q", head.Type)
 	}

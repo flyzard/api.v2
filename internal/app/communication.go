@@ -42,9 +42,7 @@ func newCommService(d Deps) *CommService {
 	}
 }
 
-// DrainOnce claims up to limit due tasks and processes each. Per-document AT
-// rejections are recorded on the task; infrastructure failures (queue writes)
-// are joined into the returned error.
+// DrainOnce claims up to limit due tasks and processes each. Per-document AT rejections are recorded on the task; infrastructure failures (queue writes) are joined into the returned error.
 func (s *CommService) DrainOnce(ctx context.Context, limit int) (int, error) {
 	tasks, err := s.queue.ClaimDue(s.clock.Now(), limit)
 	if err != nil {
@@ -65,7 +63,7 @@ func (s *CommService) process(ctx context.Context, task Task) error {
 		// Likely an infrastructure blip, not a bad document — reschedule.
 		return s.transient(task, fmt.Errorf("resolve tenant: %w", err))
 	}
-	_, invoices, _, err := s.clients.ForTenant(tenant)
+	_, invoices, transport, err := s.clients.ForTenant(tenant)
 	if err != nil {
 		return s.transient(task, fmt.Errorf("at client: %w", err))
 	}
@@ -86,8 +84,21 @@ func (s *CommService) process(ctx context.Context, task Task) error {
 			return s.classify(task, cerr)
 		}
 		return s.queue.Complete(task.ID, fmt.Sprintf("code=%d %s", res.Code, res.Message))
+	case KindTransportComm:
+		var mv domain.StockMovement
+		if lerr := s.uow.Run(ctx, task.TenantID, func(tx RepoSet) error {
+			var gerr error
+			mv, gerr = tx.Documents().GetStockMovement(task.Number)
+			return gerr
+		}); lerr != nil {
+			return s.transient(task, fmt.Errorf("load %s: %w", task.Number.Format(), lerr))
+		}
+		res, cerr := transport.CommunicateTransport(ctx, tenant.Company, mv)
+		if cerr != nil {
+			return s.classify(task, cerr)
+		}
+		return s.queue.Complete(task.ID, fmt.Sprintf("atDocCodeID=%s %s", res.ATDocCodeID, res.Message))
 	default:
-		// Transport/GT communication needs stock-movement issuance (a later plan).
 		return s.terminal(task, fmt.Errorf("unsupported task kind %q", task.Kind))
 	}
 }

@@ -55,11 +55,8 @@ func (d *CommonDraftDocument) Validate() error {
 	if !ok {
 		return fmt.Errorf("%w: %q", ErrInvalidDocumentType, d.DocumentType)
 	}
-	if d.Customer.CustomerID == uuid.Nil {
-		return ErrMissingCustomer
-	}
-	if err := d.Customer.Validate(); err != nil {
-		return fmt.Errorf("customer: %w", err)
+	if err := validateCustomerPresence(d.Customer); err != nil {
+		return err
 	}
 	if d.Series.ID == "" {
 		return ErrMissingSeries
@@ -132,6 +129,17 @@ func validateM16(customer Customer, hasM16 bool) error {
 	return nil
 }
 
+// validateCustomerPresence is the shared "customer required + valid" gate used by both CommonDraftDocument.Validate and PaymentDraft.Validate.
+func validateCustomerPresence(c Customer) error {
+	if c.CustomerID == uuid.Nil {
+		return ErrMissingCustomer
+	}
+	if err := c.Validate(); err != nil {
+		return fmt.Errorf("customer: %w", err)
+	}
+	return nil
+}
+
 // CalculateTotals folds line subtotals into d.Totals.
 // VAT and Stamp Duty are tracked separately because SAF-T exports them as distinct totals;
 // TaxPayable (TaxTotal + StampDuty) is reassembled at export time.
@@ -182,16 +190,6 @@ func (d *CommonDraftDocument) CalculateTotals() {
 	t.Breakdown = sortTaxBreakdown(bd)
 	t.AmountPayable = t.GrossTotal
 	d.Totals = t
-}
-
-// applyWithholding subtracts Σ wht.Amount from t.AmountPayable. Used by family
-// issuers (sales / payment) that hold WithholdingTax outside CommonDraftDocument.
-func (t *Totals) applyWithholding(wht []WithholdingTax) {
-	var sum Money
-	for _, w := range wht {
-		sum += w.Amount
-	}
-	t.AmountPayable = t.GrossTotal - sum
 }
 
 func sortTaxBreakdown(m map[taxBreakdownKey]TaxBreakdownEntry) TaxBreakdown {

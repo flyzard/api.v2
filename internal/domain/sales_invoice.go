@@ -311,22 +311,20 @@ func IssueSalesInvoice(draft *DraftSalesInvoice, series *Series, signer Signer, 
 	if err := draft.Validate(); err != nil {
 		return SalesInvoice{}, fmt.Errorf("draft: %w", err)
 	}
+	// Totals feed every guard below (currency amount, FS limit, withholding, FR
+	// sum). CalculateTotals is idempotent — shares are zeroed and recomputed from
+	// immutable line subtotals — so one call up front serves all guards;
+	// issueCommon recomputes again for the canonical string regardless.
+	draft.CalculateTotals()
 	// Mirrors IssuePayment: the FX rate must be dated on the invoice date so it
 	// cannot drift between draft prep and issuance (SalesInvoiceFields.Currency contract).
 	if draft.Currency != nil {
-		date := draft.Date.In(lisbonLocation)
-		// Normalize the rate date to Lisbon too: dateOnly keeps its operand's
-		// location and time.Equal compares instants, so a UTC-located rate date
-		// would otherwise fail on the same calendar day whenever Lisbon is on
-		// summer time.
-		if !dateOnly(draft.Currency.Date.In(lisbonLocation)).Equal(dateOnly(date)) {
-			return SalesInvoice{}, fmt.Errorf("currency rate date %s does not match invoice date %s",
-				draft.Currency.Date.Format("2006-01-02"), date.Format("2006-01-02"))
+		if err := validateCurrencyRateDate(draft.Currency, draft.Date.In(lisbonLocation), "invoice date"); err != nil {
+			return SalesInvoice{}, err
 		}
 		// Currency amount must equal the document gross total. Check before
 		// issueCommon so a mismatch never advances the series counter (same
 		// invariant as the FR and withholding guards below).
-		draft.CalculateTotals()
 		if draft.Currency.Amount != draft.Totals.GrossTotal {
 			return SalesInvoice{}, fmt.Errorf("currency amount %s must equal document gross %s",
 				draft.Currency.Amount.Format2DP(), draft.Totals.GrossTotal.Format2DP())
@@ -341,7 +339,6 @@ func IssueSalesInvoice(draft *DraftSalesInvoice, series *Series, signer Signer, 
 		}
 	}
 	if draft.DocumentType == FS {
-		draft.CalculateTotals()
 		limits := DefaultFSLimits
 		if opts.FSLimits != nil {
 			limits = *opts.FSLimits
@@ -355,11 +352,7 @@ func IssueSalesInvoice(draft *DraftSalesInvoice, series *Series, signer Signer, 
 	// above the gross total would print a negative payable. Reject before
 	// issueCommon so the series counter is untouched.
 	if len(draft.WithholdingTax) > 0 {
-		draft.CalculateTotals()
-		var withheld Money
-		for _, w := range draft.WithholdingTax {
-			withheld += w.Amount
-		}
+		withheld := withheldTotal(draft.WithholdingTax)
 		if withheld > draft.Totals.GrossTotal {
 			return SalesInvoice{}, fmt.Errorf("withholding total %s exceeds gross total %s",
 				withheld.Format2DP(), draft.Totals.GrossTotal.Format2DP())
@@ -369,7 +362,6 @@ func IssueSalesInvoice(draft *DraftSalesInvoice, series *Series, signer Signer, 
 	// (series.AppendIssue) on success, so a mismatch here must reject before that
 	// mutation to avoid leaving a gap in the sequence.
 	if draft.DocumentType == FR {
-		draft.CalculateTotals()
 		var sum Money
 		for _, p := range draft.Payments {
 			sum += p.Amount
@@ -390,7 +382,7 @@ func IssueSalesInvoice(draft *DraftSalesInvoice, series *Series, signer Signer, 
 		issued.Status = StatusSelfBilled
 	}
 	if len(draft.WithholdingTax) > 0 {
-		issued.Totals.applyWithholding(draft.WithholdingTax)
+		issued.Totals.AmountPayable = issued.Totals.GrossTotal - withheldTotal(draft.WithholdingTax)
 	}
 	issued.QRPayload = buildQRPayload(&issued, qr)
 	return SalesInvoice{

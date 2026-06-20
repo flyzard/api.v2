@@ -10,8 +10,7 @@ import (
 	"github.com/google/uuid"
 )
 
-// xmlMasterFiles mirrors SAF-T AuditFile/MasterFiles. For TaxAccountingBasis="F"
-// the only required children are Customer, Product, and TaxTable.
+// xmlMasterFiles mirrors SAF-T AuditFile/MasterFiles. For TaxAccountingBasis="F" the only required children are Customer, Product, and TaxTable.
 type xmlMasterFiles struct {
 	Customers []xmlCustomer `xml:"Customer"`
 	Products  []xmlProduct  `xml:"Product"`
@@ -118,9 +117,6 @@ func buildMasterFiles(sales []domain.SalesInvoice, stock []domain.StockMovement,
 	}
 
 	return xmlMasterFiles{
-		// Sort by CustomerID — the dedup key and the only unique one. AccountID
-		// is a GL account ("Desconhecido" et al.) shared across customers, so
-		// sorting on it left equal keys in map-iteration order (nondeterministic bytes).
 		Customers: sortedValues(custs, func(c xmlCustomer) string { return c.CustomerID }),
 		Products:  sortedValues(prods, func(p xmlProduct) string { return p.ProductCode }),
 		TaxTable:  buildTaxTable(rates),
@@ -130,7 +126,7 @@ func buildMasterFiles(sales []domain.SalesInvoice, stock []domain.StockMovement,
 func buildCustomer(c domain.Customer) xmlCustomer {
 	return xmlCustomer{
 		CustomerID:           saftCustomerID(c.CustomerID),
-		AccountID:            c.AccountID,
+		AccountID:            "Desconhecido",
 		CustomerTaxID:        string(c.CustomerTaxID),
 		CompanyName:          c.CompanyName,
 		Contact:              c.Contact,

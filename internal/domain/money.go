@@ -203,6 +203,25 @@ func unmarshalString[T any](data []byte, ctor func(string) (T, error), out *T) e
 	return nil
 }
 
+// validatable is the constraint for decodeValidated: a concrete value that can
+// validate itself after decoding (the Discount and LineTax variants).
+type validatable interface{ Validate() error }
+
+// decodeValidated unmarshals JSON into the concrete variant T and runs its
+// Validate, so every decoded value passes the same gate. Shared by the discount
+// and line-tax discriminated-union decoders, which select T via the type
+// discriminator. On error it returns T's zero value; callers check err first.
+func decodeValidated[T validatable](data []byte) (T, error) {
+	var v T
+	if err := json.Unmarshal(data, &v); err != nil {
+		return v, err
+	}
+	if err := v.Validate(); err != nil {
+		return v, err
+	}
+	return v, nil
+}
+
 // MarshalJSON emits Money as integer cents to match the AT 2-decimal contract
 // and to keep the wire format free of float round-trip drift. €49.50 → 4950.
 // Sub-cent values (Totals carry them via MulPercent) round half-away-from-zero

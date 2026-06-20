@@ -12,8 +12,7 @@ type Clock interface {
 	Now() time.Time
 }
 
-// UnitOfWork runs fn atomically with repos bound to one tenant. fn must be safe
-// to re-execute: on ErrVersionConflict the caller re-runs the whole function.
+// UnitOfWork runs fn atomically with repos bound to one tenant. fn must be safe to re-execute: on ErrVersionConflict the caller re-runs the whole function.
 type UnitOfWork interface {
 	Run(ctx context.Context, tenantID string, fn func(tx RepoSet) error) error
 }

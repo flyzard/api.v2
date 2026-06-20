@@ -15,7 +15,6 @@ var (
 	ErrMissingAddressDetail       = errors.New("address detail is required")
 	ErrMissingCity                = errors.New("city is required")
 	ErrMissingPostalCode          = errors.New("postal code is required")
-	ErrMissingAccountID           = errors.New("account id is required")
 	ErrMissingCompanyName         = errors.New("company name is required")
 	ErrMissingProductCode         = errors.New("product code is required")
 	ErrInvalidProductType         = errors.New("invalid product type")

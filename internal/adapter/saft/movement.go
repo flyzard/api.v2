@@ -35,6 +35,9 @@ type xmlStockMovement struct {
 // xmlMovementLine mirrors the MovementOfGoods StockMovement/Line sequence,
 // which is narrower than the SalesInvoice/WorkingDocument Line: no TaxBase,
 // no TaxPointDate, no References. Description follows UnitPrice directly.
+//
+// UnitPrice, CreditAmount, and DebitAmount are plain strings so buildMovementLine
+// can supply the linePricePair matched values (same identity fix as xmlLine).
 type xmlMovementLine struct {
 	LineNumber         int            `xml:"LineNumber"`
 	OrderReferences    []xmlOrderRef  `xml:"OrderReferences,omitempty"`
@@ -42,10 +45,10 @@ type xmlMovementLine struct {
 	ProductDescription string         `xml:"ProductDescription"`
 	Quantity           saftQty        `xml:"Quantity"`
 	UnitOfMeasure      string         `xml:"UnitOfMeasure"`
-	UnitPrice          saftMoneyLine  `xml:"UnitPrice"`
+	UnitPrice          string         `xml:"UnitPrice"`
 	Description        string         `xml:"Description"`
-	DebitAmount        *saftMoneyLine `xml:"DebitAmount,omitempty"`
-	CreditAmount       *saftMoneyLine `xml:"CreditAmount,omitempty"`
+	DebitAmount        *string        `xml:"DebitAmount,omitempty"`
+	CreditAmount       *string        `xml:"CreditAmount,omitempty"`
 	Tax                *xmlTax        `xml:"Tax,omitempty"`
 	TaxExemptionReason string         `xml:"TaxExemptionReason,omitempty"`
 	TaxExemptionCode   string         `xml:"TaxExemptionCode,omitempty"`
@@ -121,7 +124,7 @@ func buildStockMovement(d domain.StockMovement, issuerEAC string) xmlStockMoveme
 }
 
 func buildMovementLine(l domain.DocumentLine) xmlMovementLine {
-	net := saftMoneyLine(l.LineNetAmount())
+	upStr, amtStr := linePricePair(l.LineNetAmount(), l.Quantity)
 	out := xmlMovementLine{
 		LineNumber:         l.LineNumber,
 		OrderReferences:    buildOrderRefs(l.OrderReferences),
@@ -129,9 +132,9 @@ func buildMovementLine(l domain.DocumentLine) xmlMovementLine {
 		ProductDescription: l.Product.ProductDescription,
 		Quantity:           saftQty(l.Quantity),
 		UnitOfMeasure:      string(l.Product.Unit),
-		UnitPrice:          saftMoneyLine(l.EffectiveUnitPrice()),
+		UnitPrice:          upStr,
 		Description:        l.Product.ProductDescription,
-		CreditAmount:       &net,
+		CreditAmount:       &amtStr,
 	}
 	if disc := l.LineDiscountAmount(); disc > 0 {
 		v := saftMoneyLine(disc)

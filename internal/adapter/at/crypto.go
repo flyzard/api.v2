@@ -25,7 +25,6 @@ func pkcs7Pad(data []byte, blockSize int) []byte {
 }
 
 // aesECBEncrypt encrypts plaintext using AES-128-ECB with PKCS7 padding.
-// Go stdlib doesn't provide ECB mode, so we process each 16-byte block manually.
 func aesECBEncrypt(plaintext, key []byte) ([]byte, error) {
 	block, err := aes.NewCipher(key)
 	if err != nil {
@@ -43,13 +42,6 @@ func aesECBEncrypt(plaintext, key []byte) ([]byte, error) {
 }
 
 // EncryptATCredentials produces the three encrypted WS-Security header fields
-// required by AT's webservices. Each call generates a fresh random AES key for
-// replay protection.
-//
-// Returns (encryptedPassword, nonce, encryptedCreated, error) where:
-//   - encryptedPassword = Base64(AES-128-ECB(password_bytes, Ks))
-//   - nonce = Base64(RSA-PKCS1v15(Ks, atPublicKey))
-//   - encryptedCreated = Base64(AES-128-ECB(timestamp_bytes, Ks))
 func EncryptATCredentials(password string, timestamp time.Time, atPublicKey *rsa.PublicKey) (string, string, string, error) {
 	// Generate fresh random 16-byte AES key (Ks)
 	ks := make([]byte, 16)
@@ -64,9 +56,6 @@ func EncryptATCredentials(password string, timestamp time.Time, atPublicKey *rsa
 	}
 
 	// Encrypt Ks with RSA-PKCS1v15 (the nonce)
-	//lint:ignore SA1019 PKCS#1 v1.5 is AT's mandated wire format for the
-	// WS-Security nonce (like the ECB requirement above) — OAEP would break
-	// the SOAP contract.
 	encKs, err := rsa.EncryptPKCS1v15(rand.Reader, atPublicKey, ks)
 	if err != nil {
 		return "", "", "", fmt.Errorf("encrypting AES key with RSA: %w", err)
@@ -86,7 +75,6 @@ func EncryptATCredentials(password string, timestamp time.Time, atPublicKey *rsa
 }
 
 // ParseATPublicKey parses AT's RSA public key from PEM data.
-// Handles both raw PKIX public keys and X.509 certificates.
 func ParseATPublicKey(pemData string) (*rsa.PublicKey, error) {
 	block, _ := pem.Decode([]byte(pemData))
 	if block == nil {

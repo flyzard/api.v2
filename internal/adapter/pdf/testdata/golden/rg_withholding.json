@@ -685,7 +685,74 @@
 					]
 				},
 				{
-					"value": 174.4975,
+					"value": 4,
+					"type": "row",
+					"nodes": [
+						{
+							"value": 0,
+							"type": "col",
+							"details": {
+								"is_max": true
+							}
+						}
+					]
+				},
+				{
+					"value": 5,
+					"type": "row",
+					"nodes": [
+						{
+							"value": 3,
+							"type": "col",
+							"nodes": [
+								{
+									"value": "ATCUD: CSDF7T5H-2",
+									"type": "text",
+									"details": {
+										"prop_align": "L",
+										"prop_breakline_strategy": "empty_space_strategy",
+										"prop_color": "RGB(0, 0, 0)",
+										"prop_font_family": "liberation",
+										"prop_font_size": 10,
+										"prop_font_style": "B",
+										"prop_top": 0.5
+									}
+								}
+							]
+						},
+						{
+							"value": 9,
+							"type": "col"
+						}
+					]
+				},
+				{
+					"value": 32,
+					"type": "row",
+					"nodes": [
+						{
+							"value": 3,
+							"type": "col",
+							"nodes": [
+								{
+									"value": "iVBORw0KGgoAAA==",
+									"type": "bytesImage",
+									"details": {
+										"bytes_size": 1245,
+										"extension": "png",
+										"prop_percent": 100
+									}
+								}
+							]
+						},
+						{
+							"value": 9,
+							"type": "col"
+						}
+					]
+				},
+				{
+					"value": 138.4975,
 					"type": "row",
 					"nodes": [
 						{
@@ -729,32 +796,7 @@
 							"type": "col",
 							"nodes": [
 								{
-									"value": "ATCUD: CSDF7T5H-2",
-									"type": "text",
-									"details": {
-										"prop_align": "L",
-										"prop_breakline_strategy": "empty_space_strategy",
-										"prop_color": "RGB(0, 0, 0)",
-										"prop_font_family": "liberation",
-										"prop_font_size": 10,
-										"prop_font_style": "B",
-										"prop_top": 0.5
-									}
-								}
-							]
-						}
-					]
-				},
-				{
-					"value": 5,
-					"type": "row",
-					"nodes": [
-						{
-							"value": 12,
-							"type": "col",
-							"nodes": [
-								{
-									"value": "Processado por programa certificado n.º 9999/AT",
+									"value": "Emitido por programa certificado n.º 9999/AT",
 									"type": "text",
 									"details": {
 										"prop_align": "L",

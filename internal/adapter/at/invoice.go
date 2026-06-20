@@ -10,9 +10,7 @@ import (
 )
 
 // Well-known fatcorews endpoints per the AT manual "e-Fatura — Comunicação
-// por webservice, Aspetos genéricos" §2.1.2/§2.1.4 (test :723, production
-// :423). NOTE: v1 carried :700/:400 — wrong; :700 answers every request
-// with a generic "Internal Error" 500 fault.
+// por webservice, Aspetos genéricos" §2.1.2/§2.1.4 (test :723, production :423).
 const (
 	TestInvoiceURL       = "https://servicos.portaldasfinancas.gov.pt:723/fatcorews/ws/"
 	ProductionInvoiceURL = "https://servicos.portaldasfinancas.gov.pt:423/fatcorews/ws/"
@@ -288,7 +286,6 @@ func (c *Client) CommunicateInvoice(ctx context.Context, company domain.Company,
 				return nil, c.atError(ctx, "CommunicateInvoice", resp.Response.CodigoResposta, resp.Response.Mensagem)
 			}
 			return &InvoiceResult{
-				Code:          0,
 				Message:       resp.Response.Mensagem,
 				OperationDate: c.parseATDate(ctx, "DataOperacao", "2006-01-02T15:04:05", resp.Response.DataOperacao),
 			}, nil

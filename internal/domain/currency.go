@@ -109,3 +109,15 @@ func (c Currency) Validate() error {
 	}
 	return nil
 }
+
+// validateCurrencyRateDate enforces that an FX rate is dated on the document's own date (both normalized to Lisbon so DST never flips the calendar day); nil currency passes, label names the date in the error.
+func validateCurrencyRateDate(cur *Currency, docDate time.Time, label string) error {
+	if cur == nil {
+		return nil
+	}
+	if !dateOnly(cur.Date.In(lisbonLocation)).Equal(dateOnly(docDate)) {
+		return fmt.Errorf("currency rate date %s does not match %s %s",
+			cur.Date.Format("2006-01-02"), label, docDate.Format("2006-01-02"))
+	}
+	return nil
+}

@@ -16,10 +16,7 @@ import (
 // SAF-T PT 1.04_01 default namespace.
 const saftNamespace = "urn:OECD:StandardAuditFile-Tax:PT_1.04_01"
 
-// SoftwareIdentity is the AT-certified producer/software metadata stamped
-// into AuditFile/Header (ProductCompanyTaxID, SoftwareCertificateNumber,
-// ProductID, ProductVersion). The caller maps its own config onto this
-// struct so the projector stays decoupled from configuration loading.
+// SoftwareIdentity is the AT-certified producer/software metadata stamped into AuditFile/Header (ProductCompanyTaxID, SoftwareCertificateNumber, ProductID, ProductVersion).
 type SoftwareIdentity struct {
 	ProducerTaxID     string
 	CertificateNumber string
@@ -27,15 +24,12 @@ type SoftwareIdentity struct {
 	Version           string
 }
 
-// Header holds the source values for AuditFile/Header; buildHeader projects
-// to wire format at marshal time so projected fields can't drift from source.
+// Header holds the source values for AuditFile/Header; buildHeader projects to wire format at marshal time so projected fields can't drift from source.
 //
 // TaxAccountingBasis defaults to "F" (Faturação — the tenant's own billing).
 // For self-billing, Portaria 302/2016 alínea g) prescribes a SEPARATE file per
-// supplier with basis "S": Header carries the supplier's data (Issuer = the
-// supplier), MasterFiles/Customer carries the issuing acquirer, and every
-// sales invoice has InvoiceStatus "S". Supplier rows inside an "F" file are
-// not how self-billing is represented.
+// supplier with basis "S": Header carries the supplier's data (Issuer = the supplier), MasterFiles/Customer carries the issuing acquirer, and every
+// sales invoice has InvoiceStatus "S". Supplier rows inside an "F" file are not how self-billing is represented.
 type Header struct {
 	Issuer             domain.Company
 	Software           SoftwareIdentity
@@ -64,8 +58,7 @@ const (
 	currencyCodeEUR  = "EUR"
 )
 
-// xmlAuditFile is the SAF-T root element. SourceDocuments is optional and
-// only emitted when at least one family has documents.
+// xmlAuditFile is the SAF-T root element. SourceDocuments is optional and only emitted when at least one family has documents.
 type xmlAuditFile struct {
 	XMLName         xml.Name            `xml:"AuditFile"`
 	Xmlns           string              `xml:"xmlns,attr"`

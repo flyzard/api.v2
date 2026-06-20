@@ -38,8 +38,13 @@ const qrSizePx = 384
 // margin, gets cut and becomes invalid. It flows with the content instead
 // (qrRows); only safe-to-trim text sits near the paper edge.
 func legalFooterRows(atcud domain.ATCUD, hash domain.Hash, cert, mention string, includeATCUD bool) []core.Row {
-	sig := "Processado por programa certificado n.º " + cert + "/AT"
-	if hc := hash.FourChars(); hc != "" { // canonical domain extraction (positions 1/11/21/31)
+	verb := "Processado por"
+	hc := hash.FourChars()
+	if hc == "" {
+		verb = "Emitido por" // non-signed docs (receipts) — AT C2 ruling
+	}
+	sig := verb + " programa certificado n.º " + cert + "/AT"
+	if hc != "" {
 		sig = hc + " - " + sig
 	}
 

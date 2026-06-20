@@ -2,6 +2,7 @@ package at
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"crypto/rsa"
 	"crypto/tls"
@@ -19,8 +20,7 @@ import (
 	"github.com/flyzard/invoicing.v2/internal/domain"
 )
 
-// Well-known SeriesWS endpoints per AT "Comunicação de Séries Documentais —
-// Aspetos Específicos" v1.2 (Dec 2022) §1.2.2.
+// Well-known SeriesWS endpoints per AT "Comunicação de Séries Documentais — Aspetos Específicos" v1.2 (Dec 2022) §1.2.2.
 const (
 	TestSeriesURL       = "https://servicos.portaldasfinancas.gov.pt:722/SeriesWSService"
 	ProductionSeriesURL = "https://servicos.portaldasfinancas.gov.pt:422/SeriesWSService"
@@ -28,55 +28,23 @@ const (
 
 // Config holds the SeriesWS connection settings.
 type Config struct {
-	// SeriesURL is the full webservice URL: TestSeriesURL, ProductionSeriesURL,
-	// or an httptest server URL in tests.
-	SeriesURL string
-
-	// TransportURL / InvoiceURL are the full webservice URLs for transport
-	// docs (sgdtws) and invoice communication (fatcorews). Optional — only
-	// required by the respective operation.
-	TransportURL string
-	InvoiceURL   string
-
-	// Authentication (sub-user with the WSE operation permission).
-	TaxpayerNIF string
-	Username    string
-	Password    string
-
-	// SoftwareCertNum is the AT-issued certificate number stamped into
-	// registarSerie (numCertSWFatur). "0" if uncertified.
-	SoftwareCertNum string
-
-	// TaxEntity is the fatcorews establishment identifier: "Global" (default),
-	// "Sede", or an establishment code.
-	TaxEntity string
-
-	// ATPublicKey enables WS-Security credential encryption (required in
-	// production). When nil, the password travels in plain text — tests only.
-	ATPublicKey *rsa.PublicKey
-
-	// Certificate is the client certificate for mutual TLS (optional).
-	Certificate tls.Certificate
-
-	// Timeout is the per-HTTP-request timeout (default 30s).
-	Timeout time.Duration
-	// OperationTimeout caps a whole operation including retries. A caller
-	// context deadline takes precedence. Default is derived from Timeout and
-	// Retry: MaxRetries×Timeout + 2×MaxBackoff, so every retry can survive a
-	// full slow failure without being killed by the op deadline.
+	SeriesURL        string
+	TransportURL     string
+	InvoiceURL       string
+	TaxpayerNIF      string
+	Username         string
+	Password         string
+	SoftwareCertNum  string
+	TaxEntity        string
+	ATPublicKey      *rsa.PublicKey
+	Certificate      tls.Certificate
+	Timeout          time.Duration
 	OperationTimeout time.Duration
-
-	// Retry tunes the transient-error backoff. Zero values use defaults
-	// (3 attempts, 500ms initial, 10s max).
-	Retry RetrySettings
-
-	// RateLimit / RateLimitBurst throttle outbound calls to stay inside AT's
-	// per-NIF limits (~5-10 req/s). Defaults: 5 req/s, burst 10.
-	RateLimit      float64
-	RateLimitBurst int
-
-	Logger    *slog.Logger // nil → slog.Default()
-	LogBodies bool         // log SOAP request/response XML (passwords masked)
+	Retry            RetrySettings
+	RateLimit        float64
+	RateLimitBurst   int
+	Logger           *slog.Logger
+	LogBodies        bool
 }
 
 // Client talks to the AT SeriesWS over SOAP. Implements SeriesClient.
@@ -106,18 +74,13 @@ func NewClient(config Config) (*Client, error) {
 	if config.SeriesURL == "" {
 		return nil, fmt.Errorf("at.Config: SeriesURL required (TestSeriesURL or ProductionSeriesURL)")
 	}
-	// numCertSWFatur is xsd:integer with totalDigits=4 — an empty or
-	// non-numeric value would only fail at AT's schema validator.
-	if config.SoftwareCertNum == "" {
-		config.SoftwareCertNum = "0"
-	}
+	// numCertSWFatur is xsd:integer with totalDigits=4 — an empty or non-numeric value would only fail at AT's schema validator.
+	config.SoftwareCertNum = cmp.Or(config.SoftwareCertNum, "0")
 	certNum, err := strconv.Atoi(config.SoftwareCertNum)
 	if err != nil || certNum < 0 || certNum > 9999 {
 		return nil, fmt.Errorf("at.Config: SoftwareCertNum must be 0-9999, got %q", config.SoftwareCertNum)
 	}
-	if config.TaxEntity == "" {
-		config.TaxEntity = "Global"
-	}
+	config.TaxEntity = cmp.Or(config.TaxEntity, "Global")
 	rateLimit := config.RateLimit
 	if rateLimit <= 0 {
 		rateLimit = 5
@@ -127,21 +90,14 @@ func NewClient(config Config) (*Client, error) {
 		burst = 10
 	}
 
-	timeout := config.Timeout
-	if timeout == 0 {
-		timeout = 30 * time.Second
-	}
+	timeout := cmp.Or(config.Timeout, 30*time.Second)
 	opTimeout := config.OperationTimeout
 	if opTimeout <= 0 {
 		rs := config.Retry.withDefaults()
-		// Every attempt may eat a full request timeout; add the worst-case
-		// backoff schedule so the last retry is not killed by the op deadline.
+		// Every attempt may eat a full request timeout; add the worst-case backoff schedule so the last retry is not killed by the op deadline.
 		opTimeout = time.Duration(rs.MaxRetries)*timeout + 2*rs.MaxBackoff
 	}
-	logger := config.Logger
-	if logger == nil {
-		logger = slog.Default()
-	}
+	logger := cmp.Or(config.Logger, slog.Default())
 
 	tr := http.DefaultTransport.(*http.Transport).Clone()
 	tr.TLSClientConfig = &tls.Config{MinVersion: tls.VersionTLS12}
@@ -171,7 +127,6 @@ func (c *Client) ensureDeadline(ctx context.Context) (context.Context, context.C
 }
 
 // prepareCredentials builds soapCredentials, encrypting if ATPublicKey is set.
-// Called inside each *Once method so each retry gets a fresh AES key + timestamp.
 func (c *Client) prepareCredentials() (soapCredentials, error) {
 	creds := soapCredentials{
 		NIF:             c.config.TaxpayerNIF,
@@ -205,8 +160,7 @@ func (c *Client) sendSOAPRequest(ctx context.Context, operation, url string, env
 
 	if c.config.LogBodies {
 		masked := passwordMaskRe.ReplaceAllString(string(envelope), "${1}***${2}")
-		c.logger.DebugContext(ctx, "AT SOAP request",
-			slog.String("operation", operation), slog.String("body", masked))
+		c.logger.DebugContext(ctx, "AT SOAP request", slog.String("operation", operation), slog.String("body", masked))
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(envelope))
@@ -259,9 +213,7 @@ func (c *Client) sendSOAPRequest(ctx context.Context, operation, url string, env
 	return body, nil
 }
 
-// atError logs and wraps an AT-reported business error. Shared by every
-// webservice; SeriesWS goes through operResult, sgdtws/fatcorews call it
-// directly with their own status fields.
+// atError logs and wraps an AT-reported business error.
 func (c *Client) atError(ctx context.Context, operation string, code int, message string) Error {
 	atErr := Error{Code: strconv.Itoa(code), Message: message}
 	c.logger.WarnContext(ctx, "AT returned error",
@@ -279,9 +231,7 @@ func (c *Client) operResult(ctx context.Context, operation string, r atOperation
 	return c.atError(ctx, operation, r.CodResultOper, r.MsgResultOper)
 }
 
-// parseATDate parses an AT response timestamp. An unparseable value returns
-// the zero time — recognizably absent — never a fabricated local clock value
-// that could be persisted as a legal registration date.
+// parseATDate parses an AT response timestamp. An unparseable value returns the zero time
 func (c *Client) parseATDate(ctx context.Context, field, layout, raw string) time.Time {
 	t, err := time.Parse(layout, raw)
 	if err != nil {
@@ -292,11 +242,7 @@ func (c *Client) parseATDate(ctx context.Context, field, layout, raw string) tim
 	return t
 }
 
-// soapCall runs the per-operation skeleton every webservice method shares:
-// deadline, retry loop, fresh WS-Security credentials per attempt (replay
-// protection), envelope build, HTTP round-trip, SOAP fault/parse — then the
-// operation-specific inspect step on the decoded response. A free function
-// because Go methods cannot take type parameters.
+// soapCall runs the per-operation skeleton every webservice method shares
 func soapCall[Resp, Out any](
 	c *Client, ctx context.Context, operation, url string,
 	build func(soapCredentials) ([]byte, error),
@@ -327,15 +273,6 @@ func soapCall[Resp, Out any](
 }
 
 // RegisterSeries registers a document series with AT (registarSerie).
-//
-// Retry hazard + reconciliation: registarSerie is not idempotent. A retryable
-// failure ("CONNECTION", HTTP 502/504) can mean the request reached AT and was
-// committed but the response was lost — the retry then gets a deterministic
-// "série já registada" (4xxx) error even though registration succeeded. On any
-// failure this method therefore consults the series (consultarSeries) and, if
-// AT shows it registered, returns its state as success — mirroring
-// NullClient's idempotent RegisterSeries. Genuine failures fall through: the
-// consult finds nothing and the original register error surfaces.
 func (c *Client) RegisterSeries(ctx context.Context, req SeriesRegistration) (*SeriesRegistrationResult, error) {
 	res, err := c.registerSeries(ctx, req)
 	if err == nil {

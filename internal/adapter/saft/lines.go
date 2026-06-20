@@ -8,6 +8,12 @@ import "github.com/flyzard/invoicing.v2/internal/domain"
 //
 // DebitAmount / CreditAmount are pointers so encoding/xml emits exactly
 // one of them (XSD xs:choice).
+//
+// UnitPrice, CreditAmount, and DebitAmount are plain strings so buildLine
+// can supply the linePricePair matched values (high-precision UnitPrice +
+// exact-product CreditAmount/DebitAmount) without going through saftMoneyLine.
+// SettlementAmount remains saftMoneyLine (5dp) — it is the line discount,
+// not part of the Quantity × UnitPrice identity.
 type xmlLine struct {
 	LineNumber         int            `xml:"LineNumber"`
 	OrderReferences    []xmlOrderRef  `xml:"OrderReferences,omitempty"`
@@ -15,13 +21,13 @@ type xmlLine struct {
 	ProductDescription string         `xml:"ProductDescription"`
 	Quantity           saftQty        `xml:"Quantity"`
 	UnitOfMeasure      string         `xml:"UnitOfMeasure"`
-	UnitPrice          saftMoneyLine  `xml:"UnitPrice"`
+	UnitPrice          string         `xml:"UnitPrice"`
 	TaxBase            *saftMoney     `xml:"TaxBase,omitempty"`
 	TaxPointDate       string         `xml:"TaxPointDate"`
 	References         []xmlDocRef    `xml:"References,omitempty"`
 	Description        string         `xml:"Description"`
-	DebitAmount        *saftMoneyLine `xml:"DebitAmount,omitempty"`
-	CreditAmount       *saftMoneyLine `xml:"CreditAmount,omitempty"`
+	DebitAmount        *string        `xml:"DebitAmount,omitempty"`
+	CreditAmount       *string        `xml:"CreditAmount,omitempty"`
 	Tax                *xmlTax        `xml:"Tax,omitempty"`
 	TaxExemptionReason string         `xml:"TaxExemptionReason,omitempty"`
 	TaxExemptionCode   string         `xml:"TaxExemptionCode,omitempty"`
@@ -85,7 +91,7 @@ const (
 )
 
 func buildLine(l domain.DocumentLine, side lineSide) xmlLine {
-	net := saftMoneyLine(l.LineNetAmount())
+	upStr, amtStr := linePricePair(l.LineNetAmount(), l.Quantity)
 	out := xmlLine{
 		LineNumber:         l.LineNumber,
 		OrderReferences:    buildOrderRefs(l.OrderReferences),
@@ -93,7 +99,7 @@ func buildLine(l domain.DocumentLine, side lineSide) xmlLine {
 		ProductDescription: l.Product.ProductDescription,
 		Quantity:           saftQty(l.Quantity),
 		UnitOfMeasure:      string(l.Product.Unit),
-		UnitPrice:          saftMoneyLine(l.EffectiveUnitPrice()),
+		UnitPrice:          upStr,
 		TaxPointDate:       fmtDate(l.TaxPointDate),
 		References:         buildDocRefs(l.References),
 		Description:        l.Product.ProductDescription,
@@ -103,9 +109,9 @@ func buildLine(l domain.DocumentLine, side lineSide) xmlLine {
 		out.TaxBase = &v
 	}
 	if side == sideDebit {
-		out.DebitAmount = &net
+		out.DebitAmount = &amtStr
 	} else {
-		out.CreditAmount = &net
+		out.CreditAmount = &amtStr
 	}
 	if disc := l.LineDiscountAmount(); disc > 0 {
 		v := saftMoneyLine(disc)

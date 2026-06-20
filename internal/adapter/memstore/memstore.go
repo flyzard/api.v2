@@ -1,10 +1,4 @@
-// Package memstore is an in-memory implementation of the application layer's
-// persistence ports. Every map is keyed by tenant first, so repositories bound
-// to one tenant (via UnitOfWork.Run) can never read or write another tenant's
-// data. A single mutex serializes transactions; Run snapshots the maps before
-// fn and restores them on error, giving honest all-or-nothing semantics.
-// Because Run holds the lock for the whole transaction, the repository methods
-// do not lock; the standalone accessor helpers (used outside Run) do.
+// Package memstore is an in-memory implementation of the application layer's persistence ports.
 package memstore
 
 import (
@@ -21,24 +15,17 @@ import (
 )
 
 type Store struct {
-	mu       sync.Mutex
-	series   map[string]domain.Series
-	sales    map[string]domain.SalesInvoice
-	work     map[string]domain.WorkDocument
-	stock    map[string]domain.StockMovement
-	payments map[string]domain.Payment
-	idem     map[string]app.IdempotencyRecord
-	outbox   []app.Task
-
-	nextTaskID int
-
-	// failSeriesSaveOnce forces the next SeriesRepo.Save to return
-	// ErrVersionConflict, for exercising the service retry path.
-	failSeriesSaveOnce bool
-
-	// failCompleteOnce forces the next OutboxQueue.Complete to return an error,
-	// for exercising the DrainOnce error-propagation path.
-	failCompleteOnce bool
+	mu                 sync.Mutex
+	series             map[string]domain.Series
+	sales              map[string]domain.SalesInvoice
+	work               map[string]domain.WorkDocument
+	stock              map[string]domain.StockMovement
+	payments           map[string]domain.Payment
+	idem               map[string]app.IdempotencyRecord
+	outbox             []app.Task
+	nextTaskID         int
+	failSeriesSaveOnce bool // failSeriesSaveOnce forces the next SeriesRepo.Save to return ErrVersionConflict, for exercising the service retry path.
+	failCompleteOnce   bool // failCompleteOnce forces the next OutboxQueue.Complete to return an error, for exercising the DrainOnce error-propagation path.
 }
 
 func New() *Store {
@@ -111,6 +98,14 @@ func (s *Store) GetSalesInvoice(tenantID string, n domain.DocNumber) (domain.Sal
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	v, ok := s.sales[docKey(tenantID, n)]
+	return v, ok
+}
+
+// GetStockMovement is a test/inspection helper that bypasses UnitOfWork.
+func (s *Store) GetStockMovement(tenantID string, n domain.DocNumber) (domain.StockMovement, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	v, ok := s.stock[docKey(tenantID, n)]
 	return v, ok
 }
 

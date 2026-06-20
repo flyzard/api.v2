@@ -24,12 +24,13 @@ type ATCredentials struct {
 
 // Tenant is one issuing company plus what legitimately varies per company.
 type Tenant struct {
-	ID       string
-	Company  domain.Company
-	ATCreds  ATCredentials
-	CommMode CommMode
-	Calendar domain.HolidayCalendar
-	FSLimits *domain.FSLimits
+	ID            string
+	Company       domain.Company
+	ATCreds       ATCredentials
+	CommMode      CommMode
+	CommTransport bool // DL 147/2003: communicate transport docs to AT sgdtws before goods move
+	Calendar      domain.HolidayCalendar
+	FSLimits      *domain.FSLimits
 
 	AllowUnknownAllocSource bool // NC/ND may reference pre-system / manually-issued sources
 	AllowRappelNC           bool // volume-discount NCs may exceed per-source gross (SOFT ceiling)

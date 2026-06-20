@@ -67,10 +67,8 @@ func NewPercentDiscount(value float64) (Discount, error) {
 }
 
 func NewAmountDiscount(m Money) (Discount, error) {
-	if m < 0 {
-		return nil, fmt.Errorf("negative discount amount: %d", m)
-	}
-	return AmountDiscount{Amount: m}, nil
+	d := AmountDiscount{Amount: m}
+	return d, d.Validate()
 }
 
 type discountKind string
@@ -92,19 +90,6 @@ func (a AmountDiscount) MarshalJSON() ([]byte, error) {
 		Type   discountKind `json:"type"`
 		Amount Money        `json:"amount"`
 	}{discountKindAmount, a.Amount})
-}
-
-// decodeValidated decodes data into the concrete discount type and runs its
-// Validate, so every decoded discount passes the same gate.
-func decodeValidated[T Discount](data []byte) (Discount, error) {
-	var v T
-	if err := json.Unmarshal(data, &v); err != nil {
-		return nil, err
-	}
-	if err := v.Validate(); err != nil {
-		return nil, err
-	}
-	return v, nil
 }
 
 func unmarshalDiscount(data []byte) (Discount, error) {

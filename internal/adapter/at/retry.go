@@ -16,7 +16,6 @@ const (
 )
 
 // RetrySettings tunes the exponential backoff applied to transient AT errors.
-// Zero values fall back to the package defaults.
 type RetrySettings struct {
 	MaxRetries     int
 	InitialBackoff time.Duration

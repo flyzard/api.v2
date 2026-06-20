@@ -1,10 +1,3 @@
-// Command appsmoke drives the full AT certification §5 walkthrough through the
-// internal/app service layer (memstore-backed): every family is issued via
-// app.InvoicingService and the SAF-T is produced by app.ExportService. The
-// fixtures, the thirteen scenarios, and the PDF/checklist writers are local to
-// this binary (fixtures.go, scenarios.go, support.go, artifacts.go); scenarios
-// issue through the Ctx helpers (ctx.go), so their bodies never name the app
-// layer directly.
 package main
 
 import (
@@ -26,8 +19,7 @@ const (
 	outDir   = "out-appsmoke"
 )
 
-// loadSigner builds the real Portaria 363/2010 RSA-SHA1 signer from the
-// producer private key at AT_SIGNING_KEY_FILE (the same key cmd/atsmoke uses).
+// loadSigner builds the real Portaria 363/2010 RSA-SHA1 signer from the producer private key at AT_SIGNING_KEY_FILE.
 func loadSigner() (*signing.RSASigner, error) {
 	path := os.Getenv("AT_SIGNING_KEY_FILE")
 	if path == "" {
@@ -52,16 +44,16 @@ func (s mapTenantStore) Resolve(_ context.Context, id string) (app.Tenant, error
 
 func main() {
 	loc := MustLisbon()
-	today := time.Date(2026, 5, 22, 0, 0, 0, 0, loc)
-	clockBase := time.Date(2026, 5, 22, 9, 0, 0, 0, loc)
-	prevMonthDay := time.Date(2026, 4, 22, 0, 0, 0, 0, loc)
-	prevMonthClock := time.Date(2026, 4, 22, 9, 0, 0, 0, loc)
+	d := func(m, day int) time.Time { return time.Date(2026, time.Month(m), day, 0, 0, 0, 0, loc) }
+	// Series are registered before the earliest document (5.1, 8 May 2026).
+	seriesReg := time.Date(2026, 4, 1, 9, 0, 0, 0, loc)
 
-	// One clock drives both the scenarios and the app's SystemEntryDate stamping,
-	// so the April prologue carries April system-entry dates.
-	clock := NewClock(prevMonthClock, time.Minute)
+	// One clock drives both the scenarios and the app's SystemEntryDate stamping.
+	// Each scenario re-pins it (c.atDay) to its own business day at 09:00, so every
+	// document's SystemEntryDate lands on its document date.
+	clock := NewClock(seriesReg, time.Minute)
 
-	f := BuildFixtures(prevMonthClock)
+	f := BuildFixtures(seriesReg)
 	cfg, err := config.Load(".env")
 	if err != nil {
 		log.Fatalf("config: %v", err)
@@ -97,26 +89,24 @@ func main() {
 	fmt.Println("app-smoke — full cert §5 walkthrough through internal/app (memstore-backed)")
 	fmt.Printf("Issuer: %s (NIF %s) · tenant %s\n", f.Issuer.Name, f.Issuer.NIF, tenantID)
 
-	ScenarioPrevMonth(c, prevMonthDay)
-	clock.SetBase(clockBase) // jump from April to May
-
-	Scenario51(c, today)
-	Scenario52(c, today)
-	Scenario53(c, today)
-	Scenario54(c, today)
-	Scenario55(c, today)
-	Scenario56(c, today)
-	Scenario57(c, today)
-	Scenario58(c, today)
-	Scenario59(c, today)
-	Scenario510(c, today)
-	Scenario511(c, today)
-	Scenario512(c, today)
-	Scenario513(c, today)
+	// Dates mirror the reviewed certification dataset; the export spans May–June 2026.
+	Scenario51(c, d(5, 8))
+	Scenario52(c, d(5, 12))
+	Scenario53(c, d(5, 14))
+	Scenario54(c, d(5, 15))
+	Scenario55(c, d(5, 16))
+	Scenario56(c, d(5, 20))
+	Scenario57(c, d(6, 3))
+	Scenario58(c, d(6, 5))
+	Scenario59(c, d(6, 9))
+	Scenario510(c, d(6, 10))
+	Scenario511(c, d(5, 22))
+	Scenario512(c, d(6, 12))
+	Scenario513(c)
 
 	// SAF-T comes from the app's ExportService (reads the documents the services
 	// persisted in memstore) — proving the all-families export path end-to-end.
-	writeAppSAFT(svc, clockBase)
+	writeAppSAFT(svc, d(5, 1), d(6, 30))
 	// PDFs + checklist are pure projections of the issued documents (the app has
 	// no multi-via PDF surface), rendered from the same domain values.
 	WriteDocumentPDFs(c, sw, outDir)
@@ -126,14 +116,8 @@ func main() {
 		store.SalesCount(), store.WorkCount(), store.StockCount(), store.PaymentCount())
 }
 
-// writeAppSAFT exports the period spanning the previous and current month via
-// app.ExportService and writes it under outDir.
-func writeAppSAFT(svc *app.Services, now time.Time) {
-	loc := now.Location()
-	firstOfMonth := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, loc)
-	start := firstOfMonth.AddDate(0, -1, 0)
-	end := firstOfMonth.AddDate(0, 1, -1)
-
+// writeAppSAFT exports [start, end] via app.ExportService and writes it under outDir.
+func writeAppSAFT(svc *app.Services, start, end time.Time) {
 	out, err := svc.Export.ExportSAFT(context.Background(), tenantID, start, end)
 	if err != nil {
 		log.Fatalf("app ExportSAFT: %v", err)

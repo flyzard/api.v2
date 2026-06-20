@@ -93,11 +93,8 @@ func headerRows(m Meta, id docIdentity, cust domain.Customer) []core.Row {
 		sysLine = "Entrada no sistema: " + fmtDateTime(*id.SystemEntry)
 	}
 
-	// The via designation gets its own bold row — 2026 certification feedback
-	// requires "Original"/"Duplicado"/"2.ª via" clearly printed on each copy
-	// (Art. 36.º n.º 4 CIVA / DL 28/2019 Art. 6.º n.º 1).
 	rows := []core.Row{
-		row.New(7).Add(nameCols...),
+		row.New().Add(nameCols...),
 		row.New(4).Add(
 			text.NewCol(7, sellerLine, props.Text{Size: 7, Color: gray}),
 			text.NewCol(5, id.Number.Format(),
@@ -125,11 +122,6 @@ func headerRows(m Meta, id docIdentity, cust domain.Customer) []core.Row {
 	return rows
 }
 
-// customerRows prints the customer block. Print rules (2026 certification
-// feedback + Portaria 302/2016): the generic 999999990 NIF never prints on
-// the document face — anonymous and no-NIF customers show "Consumidor final"
-// instead; and a simplified invoice (FS) prints only the customer's NIF, no
-// other customer-record data (CIVA Art. 40 n.º 2 d) e n.º 3).
 func customerRows(c domain.Customer, dt domain.DocumentType) []core.Row {
 	label := row.New(4).Add(text.NewCol(12, "CLIENTE",
 		props.Text{Size: 6.5, Style: fontstyle.Bold, Color: gray, Top: 1}))
@@ -174,15 +166,7 @@ func cancelledRows(reason string) []core.Row {
 	}
 }
 
-// linesTable renders the items table: shaded column header, then one bordered
-// row per line. Amounts always positive (NC semantics live in the document type).
-//
-// The unit column always prints UnitPrice: tax-only adjustment lines (TaxBase
-// set, UnitPrice 0 — see CalculateTotals) keep a 0,00 unit so the printed
-// Qtd. × Preço unit. − Desc. reconciles with Total; their base surfaces in the
-// tax summary instead. When a global discount is baked into the lines the
-// Total additionally subtracts GlobalDiscountShare — the "Desconto global"
-// footnote in summaryAndTotalsRows accounts for that residue.
+// linesTable renders the items table: shaded column header, then one bordered row per line.
 func linesTable(lines []domain.DocumentLine) []core.Row {
 	rows := make([]core.Row, 0, 2*len(lines)+1)
 	rows = append(rows, row.New(6.5).Add(

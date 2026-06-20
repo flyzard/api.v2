@@ -18,6 +18,8 @@ go run ./cmd/appsmoke                           # §5 cert walkthrough via inter
 go run ./cmd/atsmoke                            # live smoke vs AT *test* webservices; needs AT_NIF/AT_USERNAME/AT_PASSWORD + certs (see cmd/atsmoke/main.go doc comment)
 ```
 
+!IMPORTANT: Follow YAGNI principles and one-liner solutions.
+
 No Makefile, no linter config — `gofmt` only. `cmd/atsmoke` reads `.env` (real env vars beat file); `cmd/appsmoke` is self-contained (stub signer, hardcoded software identity — no signing key). `PRODUCER_TAX_ID`, `SOFTWARE_NAME`, `PRODUCER_NAME`, `VERSION`, `CERTIFICATE_NUMBER` feed `config.SoftwareIdentity`, validated at boot.
 
 ## Architecture

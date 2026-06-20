@@ -83,7 +83,10 @@ func NewCurrency(code CurrencyCode, amount Money, rate ExchangeRate, date time.T
 // rounding half-away-from-zero on the scaled ints — the package convention
 // (a float round-trip drifts on half-cents; %.2f rounds half-to-even).
 func (c Currency) Convert(eur Money) Money {
-	cents := int64(eur) / centScale
+	// Round (not truncate) to whole cents so the converted amount reconciles with
+	// the 2dp GrossTotal emitted in SAF-T: e.g. 90.405€ shows as 90.41 and must
+	// convert as 90.41×rate, not 90.40×rate (which dropped a cent).
+	cents := roundDiv(int64(eur), centScale)
 	rate := int64(c.ExchangeRate)
 	if cents != 0 && rate != 0 && abs64(rate) > math.MaxInt64/abs64(cents) {
 		panic(fmt.Sprintf("Currency.Convert overflow: %d¢ × %d", cents, rate))

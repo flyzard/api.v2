@@ -163,10 +163,12 @@ func buildTax(t domain.LineTax) (*xmlTax, string, string) {
 		}
 		return tax, "", ""
 	case domain.NotSubjectTax:
+		// TaxCode is the SAF-T tax-code enum (RED|INT|NOR|ISE|OUT|NS), not the
+		// exemption motive — the Mxx reason rides in TaxExemptionCode below.
 		tax := &xmlTax{
 			TaxType:          taxTypeNS,
 			TaxCountryRegion: string(v.Jurisdiction),
-			TaxCode:          string(v.Reason),
+			TaxCode:          taxTypeNS,
 			TaxPercentage:    "0.00",
 		}
 		return tax, v.ReasonText, string(v.Reason)

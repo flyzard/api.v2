@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"time"
 
 	"github.com/flyzard/invoicing.v2/internal/app"
 	"github.com/flyzard/invoicing.v2/internal/domain"
@@ -44,6 +45,20 @@ func (c *Ctx) idem() app.IdempotencyKey {
 }
 
 func seriesID(dt domain.DocumentType) string { return string(dt) + "2026" }
+
+func (c *Ctx) atDay(date time.Time) {
+	c.clock.SetBase(time.Date(date.Year(), date.Month(), date.Day(), 9, 0, 0, 0, date.Location()))
+}
+
+func (c *Ctx) line(code string, qty float64, when time.Time) domain.DocumentLine {
+	it := c.f.Cat[code]
+	return newLine(it.p, qty, it.price, it.tax(), when)
+}
+
+func (c *Ctx) nsLine(code string, qty float64, reason domain.Exemption, text string, when time.Time) domain.DocumentLine {
+	it := c.f.Cat[code]
+	return newLine(it.p, qty, it.price, nsTax(reason, text), when)
+}
 
 // ── issue + record helpers (scenarios cross into the app layer only here) ─────
 //

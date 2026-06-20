@@ -1,5 +1,4 @@
-// Fixtures and the shared cast every §5 scenario draws from. Scenarios issue
-// through the Ctx helpers (ctx.go), which drive the internal/app service layer.
+// Fixtures and the shared cast every §5 scenario draws from.
 package main
 
 import (
@@ -10,26 +9,31 @@ import (
 	"github.com/flyzard/invoicing.v2/internal/domain"
 )
 
-// Fixtures is the shared cast of objects every scenario draws from.
-// One Company, one User, a handful of Customers, a Product catalogue,
-// and one registered Series per DocumentType used in the walkthrough.
+// catItem is one catalogue row: the product snapshot plus its default net unit
+// price and default line tax. Scenarios that deviate (line discount, foreign
+// currency, non-subject movement) override at the call site.
+type catItem struct {
+	p     domain.Product
+	price float64
+	tax   func() domain.LineTax
+}
+
+// Fixtures is the shared cast every scenario draws from: one Company + User,
+// the six reviewed customers (keyed by their C0xx id, plus "SELF" for own-asset
+// movements), the product catalogue, and one registered Series per DocumentType.
 type Fixtures struct {
 	Issuer     domain.Company
 	IssuerUser domain.User
 
-	CustWithNIF domain.Customer // identified + NIF (5.1, 5.2, 5.3-5.6, 5.7, 5.13)
-	CustNoNIF1  domain.Customer // identified but no NIF (5.9)
-	CustNoNIF2  domain.Customer // another identified, no NIF (5.10)
-	CustForeign domain.Customer // US customer for foreign-currency invoice (5.8)
-
-	Products map[string]domain.Product
-	Series   map[domain.DocumentType]*domain.Series
+	Cust   map[string]domain.Customer
+	Cat    map[string]catItem
+	Series map[domain.DocumentType]*domain.Series
 }
 
 func BuildFixtures(now time.Time) *Fixtures {
 	f := &Fixtures{}
 
-	issuerAddr := must(domain.NewAddress("Rua dos Programadores 1", "Lisboa", "1000-100", "PT"))
+	issuerAddr := must(domain.NewAddress("Travessa Serradinha, 46, 1 ESQ. A", "BENEDITA", "2475-116", "PT"))
 	f.Issuer = must(domain.NewCompany(domain.Company{
 		NIF:        "519348761",
 		Name:       "AVENIDA DO CODIGO - SOFTWARE E SOLUÇÕES DIGITAIS LDA",
@@ -43,37 +47,34 @@ func BuildFixtures(now time.Time) *Fixtures {
 
 	f.IssuerUser = must(domain.NewUser("issuer@demo.pt", "Maria Operadora"))
 
-	f.CustWithNIF = *must(domain.NewCustomer(
-		"503504564", "Acme Lda.",
-		must(domain.NewAddress("Rua das Flores 12", "Lisboa", "1000-001", "PT")),
-		false,
-	))
+	f.Cust = map[string]domain.Customer{
+		"C001": cust("248031562", "Maria da Conceição Silva", "Rua das Flores, 45, 2.º Esq", "Lisboa", "1200-194", "PT"),
+		"C002": cust("502819472", "Restaurante O Cantinho, Lda", "Av. da Boavista, 1200", "Porto", "4100-130", "PT"),
+		"C003": cust("517603144", "Mercearia Central, Unipessoal Lda", "Rua Ferreira Borges, 88", "Coimbra", "3000-179", "PT"),
+		"C004": cust(string(domain.FinalConsumerNIF), "João Pedro Martins", "Rua do Sol, 12", "Caldas da Rainha", "2500-100", "PT"),
+		"C005": cust(string(domain.FinalConsumerNIF), "Ana Rita Ferreira", "Travessa da Igreja, 3", "Alcobaça", "2460-050", "PT"),
+		"C006": cust("US-EIN-47-1822910", "Atlantic Beverages LLC", "350 5th Avenue, Suite 4100", "New York", "NY 10118", "US"),
+		// SELF stands in as the consignee for GA (own-asset movement, no external
+		// customer): transport docs still require a valid customer.
+		"SELF": cust(string(f.Issuer.NIF), f.Issuer.Name, issuerAddr.AddressDetail, issuerAddr.City, issuerAddr.PostalCode, "PT"),
+	}
 
-	f.CustNoNIF1 = *must(domain.NewCustomer(
-		"999999990", "Joana Silva",
-		must(domain.NewAddress("Av. da República 50", "Porto", "4000-200", "PT")),
-		false,
-	))
-
-	f.CustNoNIF2 = *must(domain.NewCustomer(
-		"999999990", "Pedro Costa",
-		must(domain.NewAddress("Rua de Santa Catarina 33", "Porto", "4000-300", "PT")),
-		false,
-	))
-
-	f.CustForeign = *must(domain.NewCustomer(
-		"EIN-12-3456789", "Globex Corp.",
-		must(domain.NewAddress("742 Evergreen Terrace", "Springfield", "12345", "US")),
-		false,
-	))
-
-	f.Products = map[string]domain.Product{
-		"P-RED":     mustProduct("P-RED", domain.ProductTypeGoods, "Pão de mistura 500g", domain.UnitKg),
-		"P-INT":     mustProduct("P-INT", domain.ProductTypeGoods, "Conserva de atum 120g", domain.UnitPiece),
-		"P-NOR":     mustProduct("P-NOR", domain.ProductTypeGoods, "Auriculares Bluetooth", domain.UnitPiece),
-		"P-EXEMPT":  mustProduct("P-EXEMPT", domain.ProductTypeService, "Consulta médica geral", domain.UnitService),
-		"P-SERVICE": mustProduct("P-SERVICE", domain.ProductTypeService, "Hora de consultoria técnica", domain.UnitHour),
-		"P-CRATE":   mustProduct("P-CRATE", domain.ProductTypeGoods, "Caixa de transporte 60x40", domain.UnitPiece),
+	f.Cat = map[string]catItem{
+		"P001": ci("P001", domain.ProductTypeGoods, "Pão de Forma Integral 500g", domain.UnitPiece, 1.29, taxRED),
+		"P002": ci("P002", domain.ProductTypeService, "Serviço de Formação Profissional (módulo)", domain.UnitPiece, 150.00,
+			func() domain.LineTax { return taxEXEMPT(domain.M07, "Isento artigo 9.º do CIVA") }),
+		"P003": ci("P003", domain.ProductTypeGoods, "Vinho Tinto Douro DOC 75cl", domain.UnitPiece, 8.90, taxINT),
+		"P004": ci("P004", domain.ProductTypeGoods, "Gin Premium 70cl", domain.UnitPiece, 24.50, taxNOR),
+		"P005": ci("P005", domain.ProductTypeGoods, "Saco Reutilizável Eco", domain.UnitPiece, 0.55, taxNOR),
+		"P006": ci("P006", domain.ProductTypeGoods, "Cerveja Artesanal IPA 33cl", domain.UnitPiece, 1.80, taxNOR),
+		"P007": ci("P007", domain.ProductTypeGoods, "Café Torrado Moído 250g", domain.UnitPiece, 3.45, taxNOR),
+		"P008": ci("P008", domain.ProductTypeGoods, "Rebuçado Mentol (unidade)", domain.UnitPiece, 0.05, taxNOR),
+		"P010": ci("P010", domain.ProductTypeService, "Serviço de Consultoria (hora)", domain.UnitHour, 75.00, taxNOR),
+		"P011": ci("P011", domain.ProductTypeGoods, "Caixa de Vinho Douro (6 garrafas)", domain.UnitPiece, 53.40, taxINT),
+		// P012 default is NS (own-asset movement, not a transmission); used by GA via c.line.
+		"P012": ci("P012", domain.ProductTypeOther, "Arca Refrigeradora (ativo próprio)", domain.UnitPiece, 1850.00,
+			func() domain.LineTax { return nsTax(domain.M99, "Movimentação de ativo próprio") }),
+		"P013": ci("P013", domain.ProductTypeService, "Mão de Obra Técnica (hora)", domain.UnitHour, 35.00, taxNOR),
 	}
 
 	// One series per used DocumentType. AT validation codes are placeholders
@@ -92,6 +93,21 @@ func BuildFixtures(now time.Time) *Fixtures {
 	}
 
 	return f
+}
+
+func cust(taxID, name, detail, city, zip string, country domain.Country) domain.Customer {
+	addr := must(domain.NewAddress(detail, city, zip, country))
+	return *must(domain.NewCustomer(domain.CustomerTaxID(taxID), name, addr, false))
+}
+
+func ci(code string, kind domain.ProductType, desc string, unit domain.UnitOfMeasure, price float64, tax func() domain.LineTax) catItem {
+	return catItem{p: mustProduct(code, kind, desc, unit), price: price, tax: tax}
+}
+
+// nsTax builds a "não sujeito" (NS) line tax — valued line, zero VAT — for the
+// own-asset / consignment / return movements (GA/GC/GD).
+func nsTax(reason domain.Exemption, text string) domain.LineTax {
+	return must(domain.NewNotSubjectLineTax(domain.TaxJurisdiction("PT"), reason, text))
 }
 
 func mustProduct(code string, kind domain.ProductType, desc string, unit domain.UnitOfMeasure) domain.Product {

@@ -116,6 +116,28 @@ func summary(line string) {
 	fmt.Printf("→ %s\n", line)
 }
 
+// expectTotals is the smoke's one money check: it fails the run if a document's
+// computed totals diverge from the reviewed certification dataset, comparing at
+// cent precision. tax is TaxTotal+StampDuty to mirror SAF-T TaxPayable.
+func expectTotals(label string, net, tax, gross domain.Money, wantNet, wantTax, wantGross float64) {
+	n, t, g := must(domain.NewMoney(wantNet)), must(domain.NewMoney(wantTax)), must(domain.NewMoney(wantGross))
+	if net.Cents() != n.Cents() || tax.Cents() != t.Cents() || gross.Cents() != g.Cents() {
+		log.Fatalf("ASSERT %s: got NET %s / TAX %s / GROSS %s, want %s / %s / %s",
+			label, net.Format2DP(), tax.Format2DP(), gross.Format2DP(), n.Format2DP(), t.Format2DP(), g.Format2DP())
+	}
+	fmt.Printf("✓ %s totals match: NET %s · TAX %s · GROSS %s\n", label, net.Format2DP(), tax.Format2DP(), gross.Format2DP())
+}
+
+// expectDoc asserts a document family's totals; sales/work/stock all embed domain.Totals.
+func expectDoc(label string, t domain.Totals, wantNet, wantTax, wantGross float64) {
+	expectTotals(label, t.NetTotal, t.TaxTotal+t.StampDuty, t.GrossTotal, wantNet, wantTax, wantGross)
+}
+
+// expectSales asserts a sales invoice against the reviewed totals.
+func expectSales(label string, doc domain.SalesInvoice, wantNet, wantTax, wantGross float64) {
+	expectDoc(label, doc.Totals, wantNet, wantTax, wantGross)
+}
+
 // checklist accumulates one row per issued document so appsmoke can emit the
 // "ponto → documento → PDF" map the certification letter asks for (Nota 2).
 var checklist []string

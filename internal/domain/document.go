@@ -10,21 +10,15 @@ import (
 )
 
 type Totals struct {
-	NetTotal   Money `json:"net_total"`
-	TaxTotal   Money `json:"tax_total"`
-	StampDuty  Money `json:"stamp_duty"`
-	GrossTotal Money `json:"gross_total"`
-	// AmountPayable defaults to GrossTotal. Family issuers that carry
-	// WithholdingTax (sales / payment) subtract the total withheld here so the
-	// final figure is "amount the customer actually pays" — feeds QR field P
-	// and the SAF-T DocumentTotals.GrossTotal vs payable distinction.
+	NetTotal      Money        `json:"net_total"`
+	TaxTotal      Money        `json:"tax_total"`
+	StampDuty     Money        `json:"stamp_duty"`
+	GrossTotal    Money        `json:"gross_total"`
 	AmountPayable Money        `json:"amount_payable"`
 	Breakdown     TaxBreakdown `json:"breakdown,omitempty"`
 }
 
-// DocumentCore is the set of fields shared verbatim by CommonDraftDocument
-// (pre-issue) and IssuedDocument (post-issue). Adding a shared field here
-// guarantees both sides stay in sync without duplicating JSON tags.
+// DocumentCore is the set of fields shared verbatim by CommonDraftDocument and IssuedDocument.
 type DocumentCore struct {
 	DocumentType DocumentType   `json:"doc_type"`
 	Customer     Customer       `json:"customer"`
@@ -40,8 +34,7 @@ type CommonDraftDocument struct {
 	Series Series `json:"series"`
 }
 
-// AddLine appends a line, assigning LineNumber from the current length so callers
-// cannot create gaps or collisions. Any LineNumber set by the caller is overwritten.
+// AddLine appends a line, assigning LineNumber from the current length.
 func (d *CommonDraftDocument) AddLine(line DocumentLine) {
 	line.LineNumber = len(d.Lines) + 1
 	d.Lines = append(d.Lines, line)

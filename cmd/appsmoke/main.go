@@ -12,6 +12,7 @@ import (
 	"github.com/flyzard/invoicing.v2/internal/adapter/signing"
 	"github.com/flyzard/invoicing.v2/internal/app"
 	"github.com/flyzard/invoicing.v2/internal/config"
+	"github.com/flyzard/invoicing.v2/internal/domain"
 )
 
 const (
@@ -42,6 +43,29 @@ func (s mapTenantStore) Resolve(_ context.Context, id string) (app.Tenant, error
 	return t, nil
 }
 
+// issuerCompany builds the domain.Company for the tenant from the issuer's
+// primitives. The composition root is the one place cmd/appsmoke touches domain.
+func issuerCompany(i issuerIdentity) domain.Company {
+	addr, err := domain.NewAddress(i.Detail, i.City, i.PostalCode, "PT")
+	if err != nil {
+		log.Fatalf("issuer address: %v", err)
+	}
+	co, err := domain.NewCompany(domain.Company{
+		NIF:        domain.TaxID(i.NIF),
+		Name:       i.Name,
+		TradeName:  i.TradeName,
+		Address:    addr,
+		FiscalYear: i.FiscalYear,
+		StartMonth: i.StartMonth,
+		EACCode:    fmt.Sprintf("%d", i.EAC), // retail (47xxx) → enables FS €1000 retail tier
+		Active:     true,
+	})
+	if err != nil {
+		log.Fatalf("issuer company: %v", err)
+	}
+	return co
+}
+
 func main() {
 	loc := MustLisbon()
 	d := func(m, day int) time.Time { return time.Date(2026, time.Month(m), day, 0, 0, 0, 0, loc) }
@@ -50,7 +74,7 @@ func main() {
 
 	clock := NewClock(seriesReg, time.Minute)
 
-	f := BuildFixtures(seriesReg)
+	f := BuildFixtures()
 	cfg, err := config.Load(".env")
 	if err != nil {
 		log.Fatalf("config: %v", err)
@@ -62,15 +86,11 @@ func main() {
 		log.Fatalf("signer: %v", err)
 	}
 
-	// App stack backed by memstore. Series are seeded already AT-registered,
-	// exactly as the app's own tests do, so issuance has an issuable series.
+	// App stack backed by memstore.
 	store := memstore.New()
-	for _, s := range f.Series {
-		store.SeedSeries(tenantID, *s)
-	}
 	tenant := app.Tenant{
 		ID:       tenantID,
-		Company:  f.Issuer,
+		Company:  issuerCompany(f.Issuer),
 		CommMode: app.CommMonthlySAFT, // no outbox/AT-client wiring needed for an issuance smoke
 	}
 	svc := app.New(app.Deps{
@@ -80,6 +100,16 @@ func main() {
 		Signer:   signer,
 		Software: sw,
 	})
+
+	// Seed every series already AT-registered through the app service, so issuance
+	// has an issuable series (no SOAP call — SeedRegisteredSeries persists locally).
+	ctx := context.Background()
+	regDate := seriesReg.Format("2006-01-02")
+	for _, s := range f.Series {
+		if serr := svc.Series.SeedRegisteredSeries(ctx, tenantID, s.id, s.docType, s.atCode, regDate); serr != nil {
+			log.Fatalf("seed series %s: %v", s.id, serr)
+		}
+	}
 
 	c := NewCtx(f, clock, NewStore(), svc, tenantID, f.IssuerUser.Email)
 
@@ -104,9 +134,8 @@ func main() {
 	// SAF-T comes from the app's ExportService (reads the documents the services
 	// persisted in memstore) — proving the all-families export path end-to-end.
 	writeAppSAFT(svc, d(5, 1), d(6, 30))
-	// PDFs + checklist are pure projections of the issued documents (the app has
-	// no multi-via PDF surface), rendered from the same domain values.
-	WriteDocumentPDFs(c, sw, outDir)
+	// PDFs + checklist render through app.RenderPDF / app.RequiredVias.
+	WriteDocumentPDFs(c, outDir)
 	WriteChecklist(outDir)
 
 	fmt.Printf("\nDone. Issued %d sales, %d work, %d stock, %d payment documents through internal/app.\n",

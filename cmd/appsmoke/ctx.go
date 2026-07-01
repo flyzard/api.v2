@@ -7,13 +7,12 @@ import (
 	"time"
 
 	"github.com/flyzard/invoicing.v2/internal/app"
-	"github.com/flyzard/invoicing.v2/internal/domain"
 )
 
 // Ctx bundles the cross-cutting machinery every scenario needs and issues each
-// family through the internal/app service layer (InvoicingService), recording the
-// returned value into its projection Store. Fields are unexported so scenario
-// bodies read verbatim; main constructs it via NewCtx.
+// family through the internal/app value-in service layer (InvoicingService),
+// recording the returned IssuedView into its projection Store. Fields are
+// unexported so scenario bodies read verbatim; main constructs it via NewCtx.
 //
 // Every issue helper ticks the shared clock once before delegating, so the
 // service (which only reads Clock.Now()) stamps a distinct SystemEntryDate per
@@ -44,82 +43,152 @@ func (c *Ctx) idem() app.IdempotencyKey {
 	return app.IdempotencyKey{Key: k, Fingerprint: k}
 }
 
-func seriesID(dt domain.DocumentType) string { return string(dt) + "2026" }
+func seriesID(dt string) string { return dt + "2026" }
+
+func ymd(t time.Time) string { return t.Format("2006-01-02") }
 
 func (c *Ctx) atDay(date time.Time) {
 	c.clock.SetBase(time.Date(date.Year(), date.Month(), date.Day(), 9, 0, 0, 0, date.Location()))
 }
 
-func (c *Ctx) line(code string, qty float64, when time.Time) domain.DocumentLine {
+// line builds a value-in LineInput from a catalogue code at the catalogue price
+// and default tax.
+func (c *Ctx) line(code string, qty float64, when time.Time) app.LineInput {
 	it := c.f.Cat[code]
-	return newLine(it.p, qty, it.price, it.tax(), when)
+	return newLine(it, qty, it.priceCents, it.tax(), when)
 }
 
-func (c *Ctx) nsLine(code string, qty float64, reason domain.Exemption, text string, when time.Time) domain.DocumentLine {
+// nsLine overrides a catalogue line's tax with a "não sujeito" descriptor.
+func (c *Ctx) nsLine(code string, qty float64, reason, text string, when time.Time) app.LineInput {
 	it := c.f.Cat[code]
-	return newLine(it.p, qty, it.price, nsTax(reason, text), when)
+	return newLine(it, qty, it.priceCents, nsTax(reason, text), when)
 }
 
 // ── issue + record helpers (scenarios cross into the app layer only here) ─────
-//
-// The caller's IssueOptions are intentionally ignored: the service looks the
-// series up by ID and stamps its own QR/options from the tenant (and the ND
-// reader), so a scenario's opts have no effect on the app path.
 
-func (c *Ctx) issueSales(draft *domain.DraftSalesInvoice, _ domain.IssueOptions) domain.SalesInvoice {
+func (c *Ctx) issueSales(in app.IssueInvoiceInput) app.IssuedView {
 	c.clock.Tick()
-	doc, err := c.svc.Invoicing.IssueSalesInvoice(c.ctx, c.tenant, app.IssueSalesInvoiceRequest{
-		Draft: *draft, SeriesID: seriesID(draft.DocumentType), SourceID: c.sourceID, Idem: c.idem(),
-	})
+	in.SeriesID = seriesID(in.DocType)
+	in.SourceID = c.sourceID
+	in.IssuedBy = c.f.IssuerUser
+	in.Idem = c.idem()
+	doc, err := c.svc.Invoicing.IssueInvoice(c.ctx, c.tenant, in)
 	if err != nil {
-		log.Fatalf("app issue sales %s: %v", draft.DocumentType, err)
+		log.Fatalf("app issue sales %s: %v", in.DocType, err)
 	}
-	c.store.recordSales(doc)
+	c.store.record(doc)
 	return doc
 }
 
-func (c *Ctx) issueStock(draft *domain.DraftStockMovement, _ domain.IssueOptions) domain.StockMovement {
+func (c *Ctx) issueStock(in app.IssueStockInput) app.IssuedView {
 	c.clock.Tick()
-	doc, err := c.svc.Invoicing.IssueStockMovement(c.ctx, c.tenant, app.IssueStockMovementRequest{
-		Draft: *draft, SeriesID: seriesID(draft.DocumentType), SourceID: c.sourceID, Idem: c.idem(),
-	})
+	in.SeriesID = seriesID(in.DocType)
+	in.SourceID = c.sourceID
+	in.IssuedBy = c.f.IssuerUser
+	in.Idem = c.idem()
+	doc, err := c.svc.Invoicing.IssueStockMovement(c.ctx, c.tenant, in)
 	if err != nil {
-		log.Fatalf("app issue stock %s: %v", draft.DocumentType, err)
+		log.Fatalf("app issue stock %s: %v", in.DocType, err)
 	}
-	c.store.recordStock(doc)
+	c.store.record(doc)
 	return doc
 }
 
-func (c *Ctx) issueWork(draft *domain.DraftWorkDocument, _ domain.IssueOptions) domain.WorkDocument {
+func (c *Ctx) issueWork(in app.IssueWorkInput) app.IssuedView {
 	c.clock.Tick()
-	doc, err := c.svc.Invoicing.IssueWorkDocument(c.ctx, c.tenant, app.IssueWorkDocumentRequest{
-		Draft: *draft, SeriesID: seriesID(draft.DocumentType), SourceID: c.sourceID, Idem: c.idem(),
-	})
+	in.SeriesID = seriesID(in.DocType)
+	in.SourceID = c.sourceID
+	in.IssuedBy = c.f.IssuerUser
+	in.Idem = c.idem()
+	doc, err := c.svc.Invoicing.IssueWorkDocument(c.ctx, c.tenant, in)
 	if err != nil {
-		log.Fatalf("app issue work %s: %v", draft.DocumentType, err)
+		log.Fatalf("app issue work %s: %v", in.DocType, err)
 	}
-	c.store.recordWork(doc)
+	c.store.record(doc)
 	return doc
 }
 
-func (c *Ctx) issuePayment(draft *domain.PaymentDraft, totals domain.PaymentTotals, _ domain.IssueOptions) domain.Payment {
+func (c *Ctx) issuePayment(in app.IssuePaymentInput) app.IssuedView {
 	c.clock.Tick()
-	doc, err := c.svc.Invoicing.IssuePayment(c.ctx, c.tenant, app.IssuePaymentRequest{
-		Draft: *draft, SeriesID: seriesID(draft.Type), Idem: c.idem(), Totals: totals,
-	})
+	in.SeriesID = seriesID(in.Type)
+	in.Idem = c.idem()
+	doc, err := c.svc.Invoicing.IssuePayment(c.ctx, c.tenant, in)
 	if err != nil {
-		log.Fatalf("app issue payment %s: %v", draft.Type, err)
+		log.Fatalf("app issue payment %s: %v", in.Type, err)
 	}
-	c.store.recordPayment(doc)
+	c.store.record(doc)
 	return doc
 }
 
-func (c *Ctx) cancel(doc domain.SalesInvoice, reason string) domain.SalesInvoice {
+func (c *Ctx) cancel(number, reason string) app.IssuedView {
 	c.clock.Tick()
-	out, err := c.svc.Invoicing.CancelDocument(c.ctx, c.tenant, doc.Number, reason)
+	out, err := c.svc.Invoicing.CancelDocument(c.ctx, c.tenant, number, reason)
 	if err != nil {
-		log.Fatalf("app cancel %s: %v", doc.Number.Format(), err)
+		log.Fatalf("app cancel %s: %v", number, err)
 	}
-	c.store.recordSales(out)
+	c.store.record(out)
 	return out
 }
+
+// ─── tax + line builders ────────────────────────────────────────────────────
+
+func taxRED() *app.LineTaxInput {
+	return &app.LineTaxInput{Kind: "VAT", Region: app.RegionPT, Category: app.RateReduced}
+}
+
+func taxINT() *app.LineTaxInput {
+	return &app.LineTaxInput{Kind: "VAT", Region: app.RegionPT, Category: app.RateIntermediate}
+}
+
+func taxNOR() *app.LineTaxInput {
+	return &app.LineTaxInput{Kind: "VAT", Region: app.RegionPT, Category: app.RateNormal}
+}
+
+func taxEXEMPT(code, reason string) *app.LineTaxInput {
+	return &app.LineTaxInput{Kind: "VAT", Region: app.RegionPT, Category: app.RateExempt, ExemptionCode: code, ExemptionReason: reason}
+}
+
+// nsTax builds a "não sujeito" (NS) line tax — valued line, zero VAT — for the
+// own-asset / consignment / return movements (GA/GC/GD).
+func nsTax(reason, text string) *app.LineTaxInput {
+	return &app.LineTaxInput{Kind: "NS", Region: app.RegionPT, ExemptionCode: reason, ExemptionReason: text}
+}
+
+// newLine wires the product snapshot + price + TaxPointDate so each scenario only
+// declares what varies. The line description derives from the catalogue per F-SAFT-9.
+func newLine(it catItem, qty float64, priceCents int64, tax *app.LineTaxInput, when time.Time) app.LineInput {
+	return app.LineInput{
+		ProductCode:        it.code,
+		ProductType:        it.ptype,
+		ProductDescription: it.desc,
+		ProductNumberCode:  it.code,
+		Unit:               it.unit,
+		Quantity:           qty,
+		UnitPriceCents:     priceCents,
+		TaxPointDate:       ymd(when),
+		Tax:                tax,
+	}
+}
+
+// ─── draft builders ─────────────────────────────────────────────────────────
+
+func (c *Ctx) salesInput(dt string, cust app.CustomerInput, date time.Time, lines ...app.LineInput) app.IssueInvoiceInput {
+	return app.IssueInvoiceInput{DocType: dt, Customer: cust, Date: ymd(date), Lines: lines}
+}
+
+func (c *Ctx) workInput(dt string, cust app.CustomerInput, date time.Time, lines ...app.LineInput) app.IssueWorkInput {
+	return app.IssueWorkInput{DocType: dt, Customer: cust, Date: ymd(date), Lines: lines}
+}
+
+func (c *Ctx) stockInput(dt string, cust app.CustomerInput, date time.Time, from, to *app.AddressInput, start time.Time, lines ...app.LineInput) app.IssueStockInput {
+	return app.IssueStockInput{
+		DocType: dt, Customer: cust, Date: ymd(date), Lines: lines,
+		ShipFrom: from, ShipTo: to, MovementStartTime: start.Format(time.RFC3339),
+	}
+}
+
+func ship(detail, city, zip string) *app.AddressInput {
+	return &app.AddressInput{Detail: detail, City: city, PostalCode: zip}
+}
+
+func days(n int) *int { return &n }

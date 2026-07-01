@@ -155,6 +155,34 @@ func (s *SeriesService) CancelSeries(ctx context.Context, tenantID, id string, d
 	})
 }
 
+// SeedRegisteredSeries creates a series that is already registered with AT
+// (e.g. migrated from another system). It builds the series, applies the AT
+// registration locally, and persists it in one shot — no SOAP call is made.
+func (s *SeriesService) SeedRegisteredSeries(ctx context.Context, tenantID, id, docType, atCode, registeredAt string) error {
+	dt, e := mapDocType(docType)
+	if e != nil {
+		return e
+	}
+	ts, e := lisbonDate(registeredAt)
+	if e != nil {
+		return e
+	}
+	ser, err := domain.NewSeries(id, dt)
+	if err != nil {
+		return newError(KindInvalid, fmt.Errorf("new series %q: %w", id, err))
+	}
+	if rerr := ser.RegisterWithAT(atCode, ts); rerr != nil {
+		return newError(KindInvalid, fmt.Errorf("register %q: %w", id, rerr))
+	}
+	if cerr := s.uow.Run(ctx, tenantID, func(tx RepoSet) error { return tx.Series().Create(ser) }); cerr != nil {
+		if errors.Is(cerr, ErrAlreadyExists) {
+			return newError(KindConflict, fmt.Errorf("series %q: %w", id, cerr))
+		}
+		return newError(KindInternal, cerr)
+	}
+	return nil
+}
+
 // ConsultSeries reads AT's view of the series (consultarSeries). Read-only.
 func (s *SeriesService) ConsultSeries(ctx context.Context, tenantID, id string, dt domain.DocumentType) (at.SeriesStatus, error) {
 	tenant, err := s.tenants.Resolve(ctx, tenantID)

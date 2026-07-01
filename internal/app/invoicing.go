@@ -201,8 +201,9 @@ func newInvoicingService(d Deps) *InvoicingService {
 	}
 }
 
-// IssueSalesInvoice issues one sales-family document (FT/FS/FR/NC/ND).
-func (s *InvoicingService) IssueSalesInvoice(
+// issueSalesInvoiceReq issues one sales-family document (FT/FS/FR/NC/ND).
+// It is the internal seam; public callers use IssueInvoice (value-in API).
+func (s *InvoicingService) issueSalesInvoiceReq(
 	ctx context.Context, tenantID string, req IssueSalesInvoiceRequest,
 ) (domain.SalesInvoice, error) {
 	draft, seriesID, sourceID, idem := req.Draft, req.SeriesID, req.SourceID, req.Idem
@@ -257,10 +258,89 @@ func (s *InvoicingService) IssueSalesInvoice(
 	)
 }
 
-// IssueWorkDocument issues one work document (NE/OR/PF/CM/FC/FO/OU). Like a sales
+// IssueInvoice issues one sales-family document from a value input.
+func (s *InvoicingService) IssueInvoice(ctx context.Context, tenantID string, in IssueInvoiceInput) (IssuedView, error) {
+	draft, e := salesDraftFrom(in)
+	if e != nil {
+		return IssuedView{}, e
+	}
+	doc, err := s.issueSalesInvoiceReq(ctx, tenantID, IssueSalesInvoiceRequest{
+		Draft: *draft, SeriesID: in.SeriesID, SourceID: in.SourceID, Idem: in.Idem,
+	})
+	if err != nil {
+		return IssuedView{}, err
+	}
+	return salesView(doc), nil
+}
+
+// PreviewTotals builds a sales draft, computes its totals, and returns a TotalsView.
+// It persists nothing: no series read, no transaction, no idempotency entry.
+func (s *InvoicingService) PreviewTotals(ctx context.Context, tenantID string, in IssueInvoiceInput) (TotalsView, error) {
+	draft, e := salesDraftFrom(in)
+	if e != nil {
+		return TotalsView{}, e
+	}
+	draft.CalculateTotals()
+	return totalsView(draft.Totals), nil
+}
+
+// IssueWorkDocument issues one work document from a value input.
+func (s *InvoicingService) IssueWorkDocument(ctx context.Context, tenantID string, in IssueWorkInput) (IssuedView, error) {
+	draft, e := workDraftFrom(in)
+	if e != nil {
+		return IssuedView{}, e
+	}
+	doc, err := s.issueWorkDocumentReq(ctx, tenantID, IssueWorkDocumentRequest{
+		Draft: *draft, SeriesID: in.SeriesID, SourceID: in.SourceID, Idem: in.Idem,
+	})
+	if err != nil {
+		return IssuedView{}, err
+	}
+	return workView(doc), nil
+}
+
+// IssueStockMovement issues one stock-movement / transport document from a value input.
+func (s *InvoicingService) IssueStockMovement(ctx context.Context, tenantID string, in IssueStockInput) (IssuedView, error) {
+	draft, e := stockDraftFrom(in)
+	if e != nil {
+		return IssuedView{}, e
+	}
+	doc, err := s.issueStockMovementReq(ctx, tenantID, IssueStockMovementRequest{
+		Draft: *draft, SeriesID: in.SeriesID, SourceID: in.SourceID, Idem: in.Idem,
+	})
+	if err != nil {
+		return IssuedView{}, err
+	}
+	return stockView(doc), nil
+}
+
+// IssuePayment issues one receipt (RC/RG) from a value input.
+// The payment request carries no SourceID param — it lives inside the draft.
+func (s *InvoicingService) IssuePayment(ctx context.Context, tenantID string, in IssuePaymentInput) (IssuedView, error) {
+	draft, e := paymentDraftFrom(in)
+	if e != nil {
+		return IssuedView{}, e
+	}
+	doc, err := s.issuePaymentReq(ctx, tenantID, IssuePaymentRequest{
+		Draft:    *draft,
+		SeriesID: in.SeriesID,
+		Totals: domain.PaymentTotals{
+			NetTotal:   moneyFromCents(in.Totals.NetCents),
+			TaxPayable: moneyFromCents(in.Totals.TaxCents),
+			GrossTotal: moneyFromCents(in.Totals.GrossCents),
+		},
+		Idem: in.Idem,
+	})
+	if err != nil {
+		return IssuedView{}, err
+	}
+	return paymentView(doc), nil
+}
+
+// issueWorkDocumentReq issues one work document (NE/OR/PF/CM/FC/FO/OU). Like a sales
 // invoice it is signed and advances the per-series hash chain. Work documents are
 // not communicated to AT, so issuance enqueues nothing.
-func (s *InvoicingService) IssueWorkDocument(
+func (s *InvoicingService) issueWorkDocumentReq(
 	ctx context.Context, tenantID string, req IssueWorkDocumentRequest,
 ) (domain.WorkDocument, error) {
 	draft, seriesID, sourceID, idem := req.Draft, req.SeriesID, req.SourceID, req.Idem
@@ -278,11 +358,11 @@ func (s *InvoicingService) IssueWorkDocument(
 	)
 }
 
-// IssueStockMovement issues one stock-movement / transport document
+// issueStockMovementReq issues one stock-movement / transport document
 // (GR/GT/GA/GC/GD). Signed and hash-chained like a sales invoice. When the
 // tenant elects transport communication (CommTransport), issuance enqueues a
 // KindTransportComm outbox task (DL 147/2003 sgdtws) in the same transaction.
-func (s *InvoicingService) IssueStockMovement(
+func (s *InvoicingService) issueStockMovementReq(
 	ctx context.Context, tenantID string, req IssueStockMovementRequest,
 ) (domain.StockMovement, error) {
 	draft, seriesID, sourceID, idem := req.Draft, req.SeriesID, req.SourceID, req.Idem
@@ -308,12 +388,12 @@ func (s *InvoicingService) IssueStockMovement(
 	)
 }
 
-// IssuePayment issues one receipt (RC/RG). Unlike the other families a payment
+// issuePaymentReq issues one receipt (RC/RG). Unlike the other families a payment
 // carries no signature or hash chain (no Hash/HashControl per the SAF-T XSD) and
 // its totals are caller-supplied rather than recomputed from lines; it still
 // advances the series sequence under the optimistic-version guard, so it shares
 // the same spine.
-func (s *InvoicingService) IssuePayment(
+func (s *InvoicingService) issuePaymentReq(
 	ctx context.Context, tenantID string, req IssuePaymentRequest,
 ) (domain.Payment, error) {
 	draft, seriesID, totals, idem := req.Draft, req.SeriesID, req.Totals, req.Idem
@@ -346,7 +426,7 @@ func (s *InvoicingService) IssuePayment(
 	)
 }
 
-// IntegrateRecoveredSalesInvoice is the recovery twin of IssueSalesInvoice.
+// IntegrateRecoveredSalesInvoice is the recovery twin of issueSalesInvoiceReq.
 // It routes through the same chainIssue spine (per-series lock, idempotent replay,
 // optimistic retry, transactional save+outbox+idempotency) changing only the domain
 // call to domain.IntegrateRecoveredSalesInvoice which forces SourceBilling="M" and
@@ -624,6 +704,42 @@ func (r docReader) FindByNumber(n domain.DocNumber) (domain.IssuedDocument, erro
 	return inv.IssuedDocument, nil
 }
 
+// MarkWorkBilled transitions a work document to Status "F" (Faturado), recording
+// the sales invoice that consumed it. Both numbers are parsed from string form;
+// parse failures map to KindInvalid. Already-billed or wrong-status errors map
+// to KindConflict.
+func (s *InvoicingService) MarkWorkBilled(
+	ctx context.Context, tenantID, workNumber, billedByNumber string,
+) (IssuedView, error) {
+	wn, e := parseNumber(workNumber)
+	if e != nil {
+		return IssuedView{}, e
+	}
+	bn, e := parseNumber(billedByNumber)
+	if e != nil {
+		return IssuedView{}, e
+	}
+	var out domain.WorkDocument
+	err := s.uow.Run(ctx, tenantID, func(tx RepoSet) error {
+		doc, gerr := tx.Documents().GetWorkDocument(wn)
+		if gerr != nil {
+			return newError(KindNotFound, fmt.Errorf("work doc %s: %w", workNumber, gerr))
+		}
+		if merr := doc.MarkBilled(bn, s.clock.Now()); merr != nil {
+			return newError(KindConflict, fmt.Errorf("mark billed %s: %w", workNumber, merr))
+		}
+		if serr := tx.Documents().SaveWorkDocument(doc); serr != nil {
+			return newError(KindInternal, fmt.Errorf("save: %w", serr))
+		}
+		out = doc
+		return nil
+	})
+	if err != nil {
+		return IssuedView{}, err
+	}
+	return workView(out), nil
+}
+
 // CancelDocument cancels an issued sales invoice (Status N → A) when the
 // e-Fatura cancellation deadline has not passed. It is the only sanctioned
 // post-issuance mutation of an issued document and changes nothing else about
@@ -633,6 +749,23 @@ func (r docReader) FindByNumber(n domain.DocNumber) (domain.IssuedDocument, erro
 // AT notification of the cancellation is a communication concern handled by a
 // later plan; this method updates local state only.
 func (s *InvoicingService) CancelDocument(
+	ctx context.Context, tenantID, number, reason string,
+) (IssuedView, error) {
+	n, e := parseNumber(number)
+	if e != nil {
+		return IssuedView{}, e
+	}
+	doc, err := s.cancelByNumber(ctx, tenantID, n, reason)
+	if err != nil {
+		return IssuedView{}, err
+	}
+	return salesView(doc), nil
+}
+
+// cancelByNumber is the transactional body of CancelDocument, kept as an
+// unexported helper so callers that already hold a domain.DocNumber (e.g.
+// cmd/appsmoke during migration) can call it directly without re-parsing.
+func (s *InvoicingService) cancelByNumber(
 	ctx context.Context, tenantID string, number domain.DocNumber, reason string,
 ) (domain.SalesInvoice, error) {
 	var cancelled domain.SalesInvoice

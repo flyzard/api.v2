@@ -366,7 +366,12 @@ func IssueSalesInvoice(draft *DraftSalesInvoice, series *Series, signer Signer, 
 		for _, p := range draft.Payments {
 			sum += p.Amount
 		}
-		if sum != draft.Totals.GrossTotal {
+		// Compare at cent precision: the FR payment amount and the document gross
+		// both render at 2dp (SAF-T PaymentAmount, GrossTotal) and the signed
+		// canonical string uses the 2dp gross, so an FR payment supplied in whole
+		// cents (the only precision the value-in boundary carries) reconciles even
+		// when the internal 5dp gross has sub-cent VAT.
+		if sum.Cents() != draft.Totals.GrossTotal.Cents() {
 			return SalesInvoice{}, fmt.Errorf("FR payment sum %s does not match gross total %s",
 				sum.Format2DP(), draft.Totals.GrossTotal.Format2DP())
 		}

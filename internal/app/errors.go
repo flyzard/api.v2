@@ -17,6 +17,7 @@ const (
 // Error is the application layer's error envelope. Services return only *Error.
 type Error struct {
 	Kind Kind
+	Code string // optional machine-readable detail for a transport field-error envelope; "" when unset
 	Err  error
 }
 
@@ -24,6 +25,9 @@ func (e *Error) Error() string { return e.Err.Error() }
 func (e *Error) Unwrap() error { return e.Err }
 
 func newError(k Kind, err error) *Error { return &Error{Kind: k, Err: err} }
+func newErrorCode(k Kind, code string, err error) *Error {
+	return &Error{Kind: k, Code: code, Err: err}
+}
 
 // KindOf extracts the Kind from an error produced by this layer, defaulting to
 // KindInternal for foreign errors.

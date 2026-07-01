@@ -82,15 +82,63 @@ func (s *QueryService) CommStatus(ctx context.Context, tenantID string, number d
 	return task, nil
 }
 
-// RenderPDF renders the original copy of a sales invoice as a PDF.
-func (s *QueryService) RenderPDF(ctx context.Context, tenantID string, number domain.DocNumber) ([]byte, error) {
+// CopyKind is the app-owned copy designation for PDF rendering.
+// Consumers never need to import internal/adapter/pdf.
+type CopyKind int
+
+const (
+	Original CopyKind = iota
+	Duplicado
+	Triplicado
+	Quadruplicado
+	SegundaVia
+)
+
+var copyToPDF = map[CopyKind]pdf.CopyKind{
+	Original:      pdf.Original,
+	Duplicado:     pdf.Duplicado,
+	Triplicado:    pdf.Triplicado,
+	Quadruplicado: pdf.Quadruplicado,
+	SegundaVia:    pdf.SegundaVia,
+}
+
+var pdfToApp = func() map[pdf.CopyKind]CopyKind {
+	m := make(map[pdf.CopyKind]CopyKind, len(copyToPDF))
+	for ak, pk := range copyToPDF {
+		m[pk] = ak
+	}
+	return m
+}()
+
+// RequiredVias returns the legally required print copies for the given document type string.
+// Returns a KindInvalid error for unknown types.
+func RequiredVias(docType string) ([]CopyKind, error) {
+	dt, aerr := mapDocType(docType)
+	if aerr != nil {
+		return nil, aerr
+	}
+	pdfVias := pdf.RequiredVias(dt)
+	out := make([]CopyKind, len(pdfVias))
+	for i, pv := range pdfVias {
+		out[i] = pdfToApp[pv]
+	}
+	return out, nil
+}
+
+// RenderPDF renders the requested copy of a document as PDF bytes.
+// number is the formatted document number (e.g. "FT2026/1").
+func (s *QueryService) RenderPDF(ctx context.Context, tenantID, number string, copy CopyKind) ([]byte, error) {
 	tenant, err := s.tenants.Resolve(ctx, tenantID)
 	if err != nil {
 		return nil, newError(KindNotFound, fmt.Errorf("resolve tenant %q: %w", tenantID, err))
 	}
-	inv, err := s.loadInvoice(ctx, tenantID, number)
-	if err != nil {
-		return nil, err
+	n, nerr := parseNumber(number)
+	if nerr != nil {
+		return nil, nerr
+	}
+	pdfCopy, ok := copyToPDF[copy]
+	if !ok {
+		return nil, newErrorCode(KindInvalid, "unknown_copy_kind", fmt.Errorf("unknown copy kind %d", copy))
 	}
 	meta := pdf.Meta{
 		Seller: pdf.Seller{
@@ -101,11 +149,46 @@ func (s *QueryService) RenderPDF(ctx context.Context, tenantID string, number do
 			PostalCode: tenant.Company.Address.PostalCode,
 		},
 		CertNumber: s.software.CertificateNumber,
-		Copy:       pdf.Original,
+		Copy:       pdfCopy,
 	}
-	out, rerr := pdf.RenderSalesInvoice(inv, meta)
+	var out []byte
+	var rerr error
+	txErr := s.uow.Run(ctx, tenantID, func(tx RepoSet) error {
+		switch {
+		case n.Type.IsSales():
+			inv, gerr := tx.Documents().GetSalesInvoice(n)
+			if gerr != nil {
+				return gerr
+			}
+			out, rerr = pdf.RenderSalesInvoice(inv, meta)
+		case n.Type.IsWorking():
+			wd, gerr := tx.Documents().GetWorkDocument(n)
+			if gerr != nil {
+				return gerr
+			}
+			out, rerr = pdf.RenderWorkDocument(wd, meta)
+		case n.Type.IsTransport():
+			sm, gerr := tx.Documents().GetStockMovement(n)
+			if gerr != nil {
+				return gerr
+			}
+			out, rerr = pdf.RenderStockMovement(sm, meta)
+		case n.Type.IsReceipt():
+			p, gerr := tx.Documents().GetPayment(n)
+			if gerr != nil {
+				return gerr
+			}
+			out, rerr = pdf.RenderPayment(p, meta)
+		default:
+			return newError(KindInvalid, fmt.Errorf("unsupported document type %q for PDF rendering", n.Type))
+		}
+		return nil
+	})
+	if txErr != nil {
+		return nil, newError(KindNotFound, fmt.Errorf("document %s: %w", number, txErr))
+	}
 	if rerr != nil {
-		return nil, newError(KindInternal, fmt.Errorf("render pdf %s: %w", number.Format(), rerr))
+		return nil, newError(KindInternal, fmt.Errorf("render pdf %s: %w", number, rerr))
 	}
 	return out, nil
 }

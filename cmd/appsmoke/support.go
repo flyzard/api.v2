@@ -4,20 +4,18 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	"maps"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
 	"time"
 
-	"github.com/flyzard/invoicing.v2/internal/adapter/pdf"
-	"github.com/flyzard/invoicing.v2/internal/domain"
+	"github.com/flyzard/invoicing.v2/internal/app"
 )
 
-// Clock advances time minute-by-minute starting from a fixed base.
-// Tick returns the next "now" and is also the Clock that IssuedDocument.Cancel
-// reads when checking the e-Fatura deadline.
+// Clock advances time minute-by-minute starting from a fixed base. Tick returns
+// the next "now"; it is the Clock the service reads (Clock.Now()) when stamping
+// SystemEntryDate and when checking cancellation deadlines.
 type Clock struct {
 	current time.Time
 	step    time.Duration
@@ -39,58 +37,39 @@ func (c *Clock) Tick() time.Time {
 // clock keeps any holder of the pointer in sync.
 func (c *Clock) SetBase(t time.Time) { c.current = t }
 
-// Store holds issued documents per family so the projector and ND validation
-// can consume them. Sales drives FindByNumber; the other families are kept for
-// the SAF-T export pass.
+// Store collects every issued (and cancelled) document's IssuedView so the PDF
+// pass can render each one through app.RenderPDF. Cancellation re-records the
+// same number; the latest view wins.
 type Store struct {
-	sales    map[string]domain.SalesInvoice
-	stock    map[string]domain.StockMovement
-	work     map[string]domain.WorkDocument
-	payments map[string]domain.Payment
+	byNumber map[string]app.IssuedView
+	order    []string // first-seen order, for stable iteration
 }
 
 func NewStore() *Store {
-	return &Store{
-		sales:    map[string]domain.SalesInvoice{},
-		stock:    map[string]domain.StockMovement{},
-		work:     map[string]domain.WorkDocument{},
-		payments: map[string]domain.Payment{},
+	return &Store{byNumber: map[string]app.IssuedView{}}
+}
+
+func (s *Store) record(v app.IssuedView) {
+	if _, seen := s.byNumber[v.Number]; !seen {
+		s.order = append(s.order, v.Number)
 	}
+	s.byNumber[v.Number] = v
 }
 
-func (s *Store) recordSales(d domain.SalesInvoice)  { s.sales[d.Number.Format()] = d }
-func (s *Store) recordStock(d domain.StockMovement) { s.stock[d.Number.Format()] = d }
-func (s *Store) recordWork(d domain.WorkDocument)   { s.work[d.Number.Format()] = d }
-func (s *Store) recordPayment(d domain.Payment)     { s.payments[d.Number.Format()] = d }
-
-// snapshot* return all recorded values as slices. Order is not guaranteed;
-// the projector sorts deterministically per family at export time.
-func (s *Store) snapshotSales() []domain.SalesInvoice {
-	return slices.Collect(maps.Values(s.sales))
-}
-func (s *Store) snapshotStock() []domain.StockMovement {
-	return slices.Collect(maps.Values(s.stock))
-}
-func (s *Store) snapshotWork() []domain.WorkDocument {
-	return slices.Collect(maps.Values(s.work))
-}
-func (s *Store) snapshotPayments() []domain.Payment {
-	return slices.Collect(maps.Values(s.payments))
-}
-
-func (s *Store) FindByNumber(n domain.DocNumber) (domain.IssuedDocument, error) {
-	d, ok := s.sales[n.Format()]
-	if !ok {
-		return domain.IssuedDocument{}, fmt.Errorf("not found: %s", n.Format())
+// views returns every recorded document, sorted by (Type, Seq) so the PDF pass
+// is deterministic across runs.
+func (s *Store) views() []app.IssuedView {
+	out := make([]app.IssuedView, 0, len(s.order))
+	for _, n := range s.order {
+		out = append(out, s.byNumber[n])
 	}
-	return d.IssuedDocument, nil
-}
-
-func must[T any](v T, err error) T {
-	if err != nil {
-		log.Fatalf("setup: %v", err)
-	}
-	return v
+	slices.SortFunc(out, func(a, b app.IssuedView) int {
+		if a.Type != b.Type {
+			return strings.Compare(a.Type, b.Type)
+		}
+		return a.Seq - b.Seq
+	})
+	return out
 }
 
 func banner(num, title string) {
@@ -116,34 +95,30 @@ func summary(line string) {
 	fmt.Printf("→ %s\n", line)
 }
 
+func cents(c int64) string { return fmt.Sprintf("%d.%02d", c/100, c%100) }
+
 // expectTotals is the smoke's one money check: it fails the run if a document's
 // computed totals diverge from the reviewed certification dataset, comparing at
-// cent precision. tax is TaxTotal+StampDuty to mirror SAF-T TaxPayable.
-func expectTotals(label string, net, tax, gross domain.Money, wantNet, wantTax, wantGross float64) {
-	n, t, g := must(domain.NewMoney(wantNet)), must(domain.NewMoney(wantTax)), must(domain.NewMoney(wantGross))
-	if net.Cents() != n.Cents() || tax.Cents() != t.Cents() || gross.Cents() != g.Cents() {
+// cent precision. tax mirrors SAF-T TaxPayable (VAT + stamp).
+func expectTotals(label string, net, tax, gross, wantNet, wantTax, wantGross int64) {
+	if net != wantNet || tax != wantTax || gross != wantGross {
 		log.Fatalf("ASSERT %s: got NET %s / TAX %s / GROSS %s, want %s / %s / %s",
-			label, net.Format2DP(), tax.Format2DP(), gross.Format2DP(), n.Format2DP(), t.Format2DP(), g.Format2DP())
+			label, cents(net), cents(tax), cents(gross), cents(wantNet), cents(wantTax), cents(wantGross))
 	}
-	fmt.Printf("✓ %s totals match: NET %s · TAX %s · GROSS %s\n", label, net.Format2DP(), tax.Format2DP(), gross.Format2DP())
+	fmt.Printf("✓ %s totals match: NET %s · TAX %s · GROSS %s\n", label, cents(net), cents(tax), cents(gross))
 }
 
-// expectDoc asserts a document family's totals; sales/work/stock all embed domain.Totals.
-func expectDoc(label string, t domain.Totals, wantNet, wantTax, wantGross float64) {
-	expectTotals(label, t.NetTotal, t.TaxTotal+t.StampDuty, t.GrossTotal, wantNet, wantTax, wantGross)
-}
-
-// expectSales asserts a sales invoice against the reviewed totals.
-func expectSales(label string, doc domain.SalesInvoice, wantNet, wantTax, wantGross float64) {
-	expectDoc(label, doc.Totals, wantNet, wantTax, wantGross)
+// expectDoc asserts an IssuedView's totals against the reviewed cents.
+func expectDoc(label string, v app.IssuedView, wantNet, wantTax, wantGross int64) {
+	expectTotals(label, v.NetCents, v.TaxCents+v.StampCents, v.GrossCents, wantNet, wantTax, wantGross)
 }
 
 // checklist accumulates one row per issued document so appsmoke can emit the
 // "ponto → documento → PDF" map the certification letter asks for (Nota 2).
 var checklist []string
 
-func recordChecklist(point string, n domain.DocNumber) {
-	checklist = append(checklist, fmt.Sprintf("%-28s %-22s %s", point, n.Format(), pdfName(n, pdf.Original)))
+func recordChecklist(point string, v app.IssuedView) {
+	checklist = append(checklist, fmt.Sprintf("%-28s %-22s %s", point, v.Number, pdfName(v, app.Original)))
 }
 
 // WriteChecklist writes <outDir>/CHECKLIST.txt mapping every checklist point to
@@ -157,40 +132,31 @@ func WriteChecklist(outDir string) {
 	fmt.Printf("Checklist written: %s (%d rows)\n", path, len(checklist))
 }
 
-func salesSummary(prefix string, doc domain.SalesInvoice) {
-	recordChecklist(prefix, doc.Number)
+func salesSummary(prefix string, v app.IssuedView) {
+	recordChecklist(prefix, v)
 	summary(fmt.Sprintf("%s · %s · ATCUD %s · NET %s · TAX %s · GROSS %s",
-		prefix,
-		doc.Number.Format(),
-		doc.ATCUD,
-		doc.Totals.NetTotal.Format2DP(),
-		(doc.Totals.TaxTotal + doc.Totals.StampDuty).Format2DP(),
-		doc.Totals.GrossTotal.Format2DP(),
-	))
+		prefix, v.Number, v.ATCUD,
+		cents(v.NetCents), cents(v.TaxCents+v.StampCents), cents(v.GrossCents)))
 }
 
-func workSummary(prefix string, doc domain.WorkDocument) {
-	recordChecklist(prefix, doc.Number)
-	summary(fmt.Sprintf("%s · %s · ATCUD %s · GROSS %s",
-		prefix, doc.Number.Format(), doc.ATCUD, doc.Totals.GrossTotal.Format2DP()))
+func workSummary(prefix string, v app.IssuedView) {
+	recordChecklist(prefix, v)
+	summary(fmt.Sprintf("%s · %s · ATCUD %s · GROSS %s", prefix, v.Number, v.ATCUD, cents(v.GrossCents)))
 }
 
-func stockSummary(prefix string, doc domain.StockMovement) {
-	recordChecklist(prefix, doc.Number)
-	summary(fmt.Sprintf("%s · %s · ATCUD %s · GROSS %s",
-		prefix, doc.Number.Format(), doc.ATCUD, doc.Totals.GrossTotal.Format2DP()))
+func stockSummary(prefix string, v app.IssuedView) {
+	recordChecklist(prefix, v)
+	summary(fmt.Sprintf("%s · %s · ATCUD %s · GROSS %s", prefix, v.Number, v.ATCUD, cents(v.GrossCents)))
 }
 
-func paymentSummary(prefix string, doc domain.Payment) {
-	recordChecklist(prefix, doc.Number)
-	summary(fmt.Sprintf("%s · %s · ATCUD %s · GROSS %s",
-		prefix, doc.Number.Format(), doc.ATCUD, doc.PaymentTotals.GrossTotal.Format2DP()))
+func paymentSummary(prefix string, v app.IssuedView) {
+	recordChecklist(prefix, v)
+	summary(fmt.Sprintf("%s · %s · ATCUD %s · GROSS %s", prefix, v.Number, v.ATCUD, cents(v.GrossCents)))
 }
 
-// printCancelledPDF renders a text-mode "PDF" with a prominent ANULADO banner.
-// Real PDF rendering lives in a Tier-3 module; this is the inspector-facing
-// stand-in so the cancellation is visibly marked.
-func printCancelledPDF(doc domain.SalesInvoice) {
+// printCancelledPDF renders a text-mode "PDF" with a prominent ANULADO banner —
+// the inspector-facing stand-in so the cancellation is visibly marked.
+func printCancelledPDF(v app.IssuedView) {
 	const w = 60
 	bar := strings.Repeat("─", w)
 	fmt.Println()
@@ -199,34 +165,31 @@ func printCancelledPDF(doc domain.SalesInvoice) {
 	line("*** DOCUMENTO ANULADO ***")
 	line(strings.Repeat("─", w-2))
 	line("")
-	line(fmt.Sprintf("Documento: %s", doc.Number.Format()))
-	line(fmt.Sprintf("ATCUD:     %s", doc.ATCUD))
-	line(fmt.Sprintf("Data emissão: %s", doc.Date.Format("2006-01-02")))
-	line(fmt.Sprintf("Anulado em:   %s", doc.StatusDate.Format("2006-01-02 15:04")))
-	line(fmt.Sprintf("Motivo:    %s", doc.Reason))
+	line(fmt.Sprintf("Documento: %s", v.Number))
+	line(fmt.Sprintf("ATCUD:     %s", v.ATCUD))
+	line(fmt.Sprintf("Data emissão: %s", v.Date))
+	line(fmt.Sprintf("Anulado em:   %s", v.StatusDate))
+	line(fmt.Sprintf("Motivo:    %s", v.Reason))
 	line("")
-	line("Emitente:  Demo Faturação Lda. (NIF 500000000)")
-	line(fmt.Sprintf("Cliente:   %s (NIF %s)", doc.Customer.CompanyName, doc.Customer.CustomerTaxID))
+	line(fmt.Sprintf("Cliente:   %s (NIF %s)", v.Customer.Name, v.Customer.TaxID))
 	line("")
-	line(fmt.Sprintf("NET:    %s €", doc.Totals.NetTotal.Format2DP()))
-	line(fmt.Sprintf("IVA:    %s €", doc.Totals.TaxTotal.Format2DP()))
-	line(fmt.Sprintf("TOTAL:  %s €", doc.Totals.GrossTotal.Format2DP()))
+	line(fmt.Sprintf("NET:    %s €", cents(v.NetCents)))
+	line(fmt.Sprintf("IVA:    %s €", cents(v.TaxCents)))
+	line(fmt.Sprintf("TOTAL:  %s €", cents(v.GrossCents)))
 	line("")
-	line(fmt.Sprintf("Hash (pos 1,11,21,31): %c%c%c%c", doc.Hash[0], doc.Hash[10], doc.Hash[20], doc.Hash[30]))
+	line(fmt.Sprintf("Hash (pos 1,11,21,31): %c%c%c%c", v.Hash[0], v.Hash[10], v.Hash[20], v.Hash[30]))
 	line("*** DOCUMENTO ANULADO — NÃO É VÁLIDO PARA EFEITOS FISCAIS ***")
 	fmt.Println("└" + bar + "┘")
 }
 
-// printSAFTCancelRow shows the SAF-T DocumentStatus fields that the projector
-// (Tier-3 module) will emit for the cancelled document. Inspector reads this to
-// confirm the cancellation registered in both the DB (issued doc state) and
-// the SAF-T export shape.
-func printSAFTCancelRow(doc domain.SalesInvoice) {
+// printSAFTCancelRow shows the SAF-T DocumentStatus fields the projector emits
+// for the cancelled document.
+func printSAFTCancelRow(v app.IssuedView) {
 	fmt.Println()
 	fmt.Println("-- SAF-T SourceDocuments/SalesInvoices/Invoice/DocumentStatus --")
-	fmt.Printf("  InvoiceStatus:     %s\n", doc.Status)
-	fmt.Printf("  InvoiceStatusDate: %s\n", doc.StatusDate.Format("2006-01-02T15:04:05"))
-	fmt.Printf("  Reason:            %s\n", doc.Reason)
-	fmt.Printf("  SourceID:          %s\n", doc.SourceID)
-	fmt.Printf("  SourceBilling:     %s\n", doc.SourceBilling)
+	fmt.Printf("  InvoiceStatus:     %s\n", v.Status)
+	fmt.Printf("  InvoiceStatusDate: %s\n", v.StatusDate)
+	fmt.Printf("  Reason:            %s\n", v.Reason)
+	fmt.Printf("  SourceID:          %s\n", v.SourceID)
+	fmt.Printf("  SourceBilling:     %s\n", v.SourceBilling)
 }

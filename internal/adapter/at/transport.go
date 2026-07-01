@@ -157,7 +157,7 @@ func buildTransportEnvelope(creds soapCredentials, company domain.Company, mv do
 		ATCUD:                 string(mv.ATCUD),
 		MovementStatus:        movementStatus,
 		MovementDate:          mv.Date.Format("2006-01-02"),
-		MovementType:          string(mv.DocumentType),
+		MovementType:          mv.DocumentType.String(),
 		CustomerTaxID:         string(mv.Customer.CustomerTaxID),
 		CustomerAddress:       addressToTransport(mv.Customer.BillingAddress),
 		CustomerName:          mv.Customer.CompanyName,

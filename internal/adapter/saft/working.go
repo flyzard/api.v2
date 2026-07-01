@@ -67,7 +67,7 @@ func buildWorkDocument(d domain.WorkDocument, issuerEAC string) xmlWorkDocument 
 		Hash:            string(d.Hash),
 		HashControl:     string(d.HashControl),
 		WorkDate:        fmtDate(d.Date),
-		WorkType:        string(d.DocumentType),
+		WorkType:        d.DocumentType.String(),
 		SourceID:        d.SourceID,
 		EACCode:         issuerEAC,
 		SystemEntryDate: fmtDateTime(d.SystemEntryDate),

@@ -114,7 +114,7 @@ func buildPayment(p domain.Payment) xmlPayment {
 		ATCUD:           string(p.ATCUD),
 		TransactionID:   p.TransactionID,
 		TransactionDate: fmtDate(p.TransactionDate),
-		PaymentType:     string(p.Type),
+		PaymentType:     p.Type.String(),
 		Description:     p.Description,
 		SystemID:        p.SystemID,
 		DocumentStatus: xmlPaymentStatus{

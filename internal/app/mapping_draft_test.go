@@ -2,6 +2,8 @@ package app
 
 import (
 	"testing"
+
+	"github.com/flyzard/invoicing.v2/internal/domain"
 )
 
 func TestSalesDraftAndViewRoundTrip(t *testing.T) {
@@ -19,7 +21,7 @@ func TestSalesDraftAndViewRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("salesDraftFrom: %v", err)
 	}
-	if d.DocumentType != "FT" || len(d.Lines) != 1 {
+	if d.DocumentType != domain.FT || len(d.Lines) != 1 {
 		t.Fatalf("draft shape wrong: %+v", d)
 	}
 	if d.Lines[0].UnitPrice.Cents() != 890 {
@@ -46,7 +48,7 @@ func TestWorkDraftBuilder(t *testing.T) {
 	if err != nil {
 		t.Fatalf("workDraftFrom: %v", err)
 	}
-	if d.DocumentType != "OR" {
+	if d.DocumentType != domain.OR {
 		t.Fatalf("expected doc type OR, got %s", d.DocumentType)
 	}
 	if len(d.Lines) != 1 {
@@ -76,7 +78,7 @@ func TestStockDraftBuilder(t *testing.T) {
 	if err != nil {
 		t.Fatalf("stockDraftFrom: %v", err)
 	}
-	if d.DocumentType != "GT" {
+	if d.DocumentType != domain.GT {
 		t.Fatalf("expected doc type GT, got %s", d.DocumentType)
 	}
 	if len(d.Lines) != 1 {
@@ -113,7 +115,7 @@ func TestPaymentDraftBuilder(t *testing.T) {
 	if err != nil {
 		t.Fatalf("paymentDraftFrom: %v", err)
 	}
-	if d.Type != "RC" {
+	if d.Type != domain.RC {
 		t.Fatalf("expected type RC, got %s", d.Type)
 	}
 	if len(d.Methods) != 1 {

@@ -59,5 +59,5 @@ func ParseDocNumber(s string) (DocNumber, error) {
 	if err != nil {
 		return DocNumber{}, fmt.Errorf("malformed doc number seq: %q", s)
 	}
-	return NewDocNumber(DocumentType(s[:space]), s[space+1:slash], seq)
+	return NewDocNumber(DocumentType{code: s[:space]}, s[space+1:slash], seq)
 }

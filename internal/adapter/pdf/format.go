@@ -35,7 +35,7 @@ func docTypeLabel(dt domain.DocumentType) string {
 	if l, ok := docTypeLabels[dt]; ok {
 		return l
 	}
-	return string(dt)
+	return dt.String()
 }
 
 // commaDecimal converts a dot-decimal numeric string to the Portuguese comma form.

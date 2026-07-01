@@ -21,7 +21,7 @@ func mapDocType(s string) (domain.DocumentType, *Error) {
 	if dt, ok := docTypes[s]; ok {
 		return dt, nil
 	}
-	return "", newErrorCode(KindInvalid, "unknown_doc_type", fmt.Errorf("unknown doc type %q", s))
+	return domain.DocumentType{}, newErrorCode(KindInvalid, "unknown_doc_type", fmt.Errorf("unknown doc type %q", s))
 }
 
 var categories = map[string]domain.TaxCategory{
@@ -553,7 +553,7 @@ func viewFrom(doc domain.IssuedDocument, totals domain.Totals, lines []domain.Do
 	statusDate := doc.StatusDate.In(lisbonLoc).Format("2006-01-02")
 	return IssuedView{
 		Number:        n.Format(),
-		Type:          string(n.Type),
+		Type:          n.Type.String(),
 		Series:        n.Series,
 		Seq:           n.Seq,
 		ATCUD:         string(doc.ATCUD),
@@ -594,7 +594,7 @@ func paymentView(p domain.Payment) IssuedView {
 	statusDate := p.StatusDate.In(lisbonLoc).Format("2006-01-02")
 	return IssuedView{
 		Number:     n.Format(),
-		Type:       string(n.Type),
+		Type:       n.Type.String(),
 		Series:     n.Series,
 		Seq:        n.Seq,
 		ATCUD:      string(p.ATCUD),

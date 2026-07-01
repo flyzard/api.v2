@@ -105,7 +105,7 @@ func buildStockMovement(d domain.StockMovement, issuerEAC string) xmlStockMoveme
 		Hash:              string(d.Hash),
 		HashControl:       string(d.HashControl),
 		MovementDate:      fmtDate(d.Date),
-		MovementType:      string(d.DocumentType),
+		MovementType:      d.DocumentType.String(),
 		SystemEntryDate:   fmtDateTime(d.SystemEntryDate),
 		CustomerID:        saftCustomerID(d.Customer.CustomerID),
 		SourceID:          d.SourceID,

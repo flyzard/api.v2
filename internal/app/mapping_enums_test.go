@@ -9,7 +9,7 @@ func TestEnumTablesRoundTripToDomain(t *testing.T) {
 		if err != nil || got != want {
 			t.Fatalf("mapDocType(%q) = %v, %v", s, got, err)
 		}
-		if string(got) != s { // the const value IS the domain string
+		if got.String() != s { // the const value IS the domain string
 			t.Fatalf("doc type %q != %q", got, s)
 		}
 	}

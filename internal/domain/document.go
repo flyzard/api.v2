@@ -41,7 +41,7 @@ func (d *CommonDraftDocument) AddLine(line DocumentLine) {
 }
 
 func (d *CommonDraftDocument) Validate() error {
-	if d.DocumentType == "" {
+	if d.DocumentType.IsZero() {
 		return ErrMissingDocumentType
 	}
 	rules, ok := documentTypes[d.DocumentType]

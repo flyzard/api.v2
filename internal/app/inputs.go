@@ -2,27 +2,27 @@ package app
 
 import "github.com/flyzard/invoicing.v2/internal/domain"
 
-// ── enum string consts (re-exported domain values; consumers never import domain) ──
+// ── enum string consts (wire values for the doc-type enum; consumers never import domain) ──
 const (
-	DocFT = string(domain.FT)
-	DocFS = string(domain.FS)
-	DocFR = string(domain.FR)
-	DocNC = string(domain.NC)
-	DocND = string(domain.ND)
-	DocGR = string(domain.GR)
-	DocGT = string(domain.GT)
-	DocGA = string(domain.GA)
-	DocGC = string(domain.GC)
-	DocGD = string(domain.GD)
-	DocOR = string(domain.OR)
-	DocPF = string(domain.PF)
-	DocNE = string(domain.NE)
-	DocCM = string(domain.CM)
-	DocFC = string(domain.FC)
-	DocFO = string(domain.FO)
-	DocOU = string(domain.OU)
-	DocRC = string(domain.RC)
-	DocRG = string(domain.RG)
+	DocFT = "FT"
+	DocFS = "FS"
+	DocFR = "FR"
+	DocNC = "NC"
+	DocND = "ND"
+	DocGR = "GR"
+	DocGT = "GT"
+	DocGA = "GA"
+	DocGC = "GC"
+	DocGD = "GD"
+	DocOR = "OR"
+	DocPF = "PF"
+	DocNE = "NE"
+	DocCM = "CM"
+	DocFC = "FC"
+	DocFO = "FO"
+	DocOU = "OU"
+	DocRC = "RC"
+	DocRG = "RG"
 )
 
 const (

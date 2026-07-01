@@ -284,7 +284,7 @@ func buildSeriesRegistrationEnvelope(creds soapCredentials, req SeriesRegistrati
 		Serie:              req.SeriesID,
 		TipoSerie:          req.SeriesType,
 		ClasseDoc:          class,
-		TipoDoc:            string(req.DocType),
+		TipoDoc:            req.DocType.String(),
 		NumInicialSeq:      req.InitialSeq,
 		DataInicioPrevUtil: req.ExpectedStartDate.Format("2006-01-02"),
 		NumCertSWFatur:     certNum,
@@ -300,7 +300,7 @@ func buildSeriesFinalizationEnvelope(creds soapCredentials, req SeriesFinalizati
 	return buildSOAPEnvelope(creds, seriesFinalizationRequest{
 		Serie:               req.SeriesID,
 		ClasseDoc:           class,
-		TipoDoc:             string(req.DocType),
+		TipoDoc:             req.DocType.String(),
 		CodValidacaoSerie:   req.ATCode,
 		SeqUltimoDocEmitido: req.LastSeq,
 		Justificacao:        req.Justification,
@@ -315,7 +315,7 @@ func buildSeriesCancellationEnvelope(creds soapCredentials, req SeriesCancellati
 	return buildSOAPEnvelope(creds, seriesCancellationRequest{
 		Serie:                req.SeriesID,
 		ClasseDoc:            class,
-		TipoDoc:              string(req.DocType),
+		TipoDoc:              req.DocType.String(),
 		CodValidacaoSerie:    req.ATCode,
 		Motivo:               req.Reason,
 		DeclaracaoNaoEmissao: true,
@@ -330,6 +330,6 @@ func buildSeriesStatusEnvelope(creds soapCredentials, seriesID string, docType d
 	return buildSOAPEnvelope(creds, seriesStatusRequest{
 		Serie:     seriesID,
 		ClasseDoc: class,
-		TipoDoc:   string(docType),
+		TipoDoc:   docType.String(),
 	})
 }

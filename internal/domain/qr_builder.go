@@ -88,7 +88,7 @@ func buildQRFromFields(f qrFields, cfg QRConfig) string {
 		country = "Desconhecido"
 	}
 	add("C", country)
-	add("D", string(f.docType))
+	add("D", f.docType.String())
 	add("E", string(f.status))
 	add("F", f.date.Format("20060102"))
 	add("G", f.number.Format())

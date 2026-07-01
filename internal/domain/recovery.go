@@ -55,7 +55,7 @@ func (r RecoveredRef) Validate() error {
 		if !r.OriginalType.IsValid() {
 			return fmt.Errorf("backup recovery requires a valid original document type, got %q", r.OriginalType)
 		}
-	} else if r.OriginalType != "" {
+	} else if !r.OriginalType.IsZero() {
 		return fmt.Errorf("manual recovery cannot carry an original document type: %q", r.OriginalType)
 	}
 	return nil

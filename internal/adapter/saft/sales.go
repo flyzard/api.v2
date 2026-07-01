@@ -127,7 +127,7 @@ func buildInvoice(d domain.SalesInvoice, issuerEAC string) xmlInvoice {
 		Hash:            string(d.Hash),
 		HashControl:     string(d.HashControl),
 		InvoiceDate:     fmtDate(d.Date),
-		InvoiceType:     string(d.DocumentType),
+		InvoiceType:     d.DocumentType.String(),
 		SpecialRegimes:  buildSpecialRegimes(d.SpecialRegimes),
 		SourceID:        d.SourceID,
 		EACCode:         issuerEAC,

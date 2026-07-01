@@ -358,9 +358,13 @@ func (c *Client) GetSeriesStatus(ctx context.Context, seriesID string, docType d
 				if info.Serie != seriesID {
 					continue
 				}
+				dt, err := domain.ParseDocumentType(info.TipoDoc)
+				if err != nil {
+					return nil, fmt.Errorf("consultarSeries: %w", err)
+				}
 				return &SeriesStatus{
 					SeriesID:         info.Serie,
-					DocType:          domain.DocumentType(info.TipoDoc),
+					DocType:          dt,
 					ValidationCode:   info.CodValidacaoSerie,
 					Status:           statusFromEstado(info.Estado),
 					LastSeq:          info.SeqUltimoDocEmitido,

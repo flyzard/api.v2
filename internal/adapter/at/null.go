@@ -63,7 +63,7 @@ func (c *NullClient) deriveUniqueCode(key nullKey) string {
 	for _, s := range c.series {
 		seen[s.code] = true
 	}
-	base := string(key.DocType) + "_" + key.ID
+	base := key.DocType.String() + "_" + key.ID
 	for i := range 32 {
 		salt := base
 		if i > 0 {

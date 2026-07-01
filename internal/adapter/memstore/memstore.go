@@ -44,7 +44,7 @@ func New() *Store {
 const sep = "\x1f"
 
 func seriesKey(tenantID, id string, dt domain.DocumentType) string {
-	return tenantID + sep + string(dt) + sep + id
+	return tenantID + sep + dt.String() + sep + id
 }
 
 // docKey keys any family's issued document by tenant + formatted number. The

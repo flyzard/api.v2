@@ -1,34 +1,61 @@
 package domain
 
-type DocumentType string
+import (
+	"encoding/json"
+	"fmt"
+)
 
-const (
+// DocumentType is sealed: its only possible values are the constants below
+// or the result of ParseDocumentType. The underlying field is unexported so
+// no package outside domain can construct one directly (e.g. DocumentType("XX")
+// does not compile) — external code must go through ParseDocumentType/JSON
+// unmarshaling, both of which validate against documentTypes.
+type DocumentType struct{ code string }
+
+func (dt DocumentType) String() string { return dt.code }
+
+func (dt DocumentType) MarshalJSON() ([]byte, error) { return json.Marshal(dt.code) }
+
+func (dt *DocumentType) UnmarshalJSON(data []byte) error {
+	return unmarshalString(data, ParseDocumentType, dt)
+}
+
+// ParseDocumentType validates s against the known document types.
+func ParseDocumentType(s string) (DocumentType, error) {
+	dt := DocumentType{code: s}
+	if !dt.IsValid() {
+		return DocumentType{}, fmt.Errorf("%w: %q", ErrInvalidDocumentType, s)
+	}
+	return dt, nil
+}
+
+var (
 	// Sales
-	FT DocumentType = "FT"
-	FS DocumentType = "FS"
-	FR DocumentType = "FR"
-	NC DocumentType = "NC"
-	ND DocumentType = "ND"
+	FT = DocumentType{"FT"}
+	FS = DocumentType{"FS"}
+	FR = DocumentType{"FR"}
+	NC = DocumentType{"NC"}
+	ND = DocumentType{"ND"}
 
 	// Transport
-	GT DocumentType = "GT"
-	GR DocumentType = "GR"
-	GA DocumentType = "GA"
-	GC DocumentType = "GC"
-	GD DocumentType = "GD"
+	GT = DocumentType{"GT"}
+	GR = DocumentType{"GR"}
+	GA = DocumentType{"GA"}
+	GC = DocumentType{"GC"}
+	GD = DocumentType{"GD"}
 
 	// Working
-	OR DocumentType = "OR"
-	PF DocumentType = "PF"
-	NE DocumentType = "NE"
-	CM DocumentType = "CM"
-	FC DocumentType = "FC"
-	FO DocumentType = "FO"
-	OU DocumentType = "OU"
+	OR = DocumentType{"OR"}
+	PF = DocumentType{"PF"}
+	NE = DocumentType{"NE"}
+	CM = DocumentType{"CM"}
+	FC = DocumentType{"FC"}
+	FO = DocumentType{"FO"}
+	OU = DocumentType{"OU"}
 
 	// Receipts
-	RC DocumentType = "RC"
-	RG DocumentType = "RG"
+	RC = DocumentType{"RC"}
+	RG = DocumentType{"RG"}
 )
 
 // docFamily groups DocumentTypes by SAF-T family.
@@ -74,6 +101,7 @@ var documentTypes = map[DocumentType]docTypeRules{
 	RG: {Family: familyReceipt},
 }
 
+func (dt DocumentType) IsZero() bool  { return dt == DocumentType{} }
 func (dt DocumentType) IsValid() bool { _, ok := documentTypes[dt]; return ok }
 func (dt DocumentType) IsSales() bool { return documentTypes[dt].Family == familySales }
 

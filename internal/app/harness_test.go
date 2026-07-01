@@ -63,7 +63,7 @@ func newTestServices(t *testing.T) (*app.Services, string) {
 	store := memstore.New()
 	tenant := app.Tenant{ID: "t1", Company: testCompany(t)} // CommMode default; AllowUnknownAllocSource stays false
 	for _, dt := range []domain.DocumentType{domain.FT, domain.FS, domain.FR, domain.NC, domain.ND, domain.OR, domain.PF, domain.GT, domain.RC, domain.RG} {
-		s, _ := domain.NewSeries(string(dt)+"2026", dt)
+		s, _ := domain.NewSeries(dt.String()+"2026", dt)
 		_ = s.RegisterWithAT("ATCODE01", time.Date(2026, 4, 1, 9, 0, 0, 0, testLisbonLoc))
 		store.SeedSeries(tenant.ID, s)
 	}

@@ -245,7 +245,7 @@ func buildInvoiceEnvelope(creds soapCredentials, company domain.Company, inv dom
 			InvoiceNo:            inv.Number.Format(),
 			ATCUD:                string(inv.ATCUD),
 			InvoiceDate:          inv.Date.Format("2006-01-02"),
-			InvoiceType:          string(inv.DocumentType),
+			InvoiceType:          inv.DocumentType.String(),
 			SelfBillingIndicator: selfBill,
 			CustomerTaxID:        string(inv.Customer.CustomerTaxID),
 			CustomerTaxIDCountry: customerCountry,
